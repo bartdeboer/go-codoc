@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/bartdeboer/codoc/internal/index"
-	"github.com/bartdeboer/codoc/internal/load"
-	"github.com/bartdeboer/codoc/internal/model"
-	"github.com/bartdeboer/codoc/internal/query"
-	"github.com/bartdeboer/codoc/internal/render"
-	"github.com/bartdeboer/codoc/internal/verify"
+	"github.com/bartdeboer/go-codoc/internal/index"
+	"github.com/bartdeboer/go-codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/query"
+	"github.com/bartdeboer/go-codoc/internal/render"
+	"github.com/bartdeboer/go-codoc/internal/verify"
 )
 
 type App struct{ Out io.Writer }
@@ -42,13 +42,19 @@ func (a App) Load(ctx context.Context, workDir, pattern string) (*load.Package, 
 	return source, doc, err
 }
 func (a App) Narrative(ctx context.Context, source *load.Package, doc model.Package, options Options) error {
-	narrative := model.Narrative{Kind: "narrative", ImportPath: doc.ImportPath, Name: doc.Name, Overview: doc.Overview, GoldenPaths: nonNil(doc.GoldenPaths), Passed: true}
-	if len(narrative.GoldenPaths) > 0 {
-		result := verify.RunGolden(ctx, source)
+	narrative := model.Narrative{Kind: "narrative", ImportPath: doc.ImportPath, Name: doc.Name, Overview: doc.Overview, DocumentedTests: nonNil(doc.DocumentedTests), Passed: true}
+	if len(narrative.DocumentedTests) > 0 {
+		testNames := make([]string, len(narrative.DocumentedTests))
+		for i, test := range narrative.DocumentedTests {
+			testNames[i] = test.TestName
+		}
+		result := verify.RunDocumented(ctx, source, testNames)
 		narrative.Passed = result.Passed
-		narrative.Output = result.Output
-		for i := range narrative.GoldenPaths {
-			path := &narrative.GoldenPaths[i]
+		if !result.Passed {
+			narrative.Output = result.Output
+		}
+		for i := range narrative.DocumentedTests {
+			path := &narrative.DocumentedTests[i]
 			test, found := result.Tests[path.TestName]
 			if !found || test.Status != "pass" {
 				narrative.Passed = false
@@ -68,7 +74,7 @@ func (a App) Narrative(ctx context.Context, source *load.Package, doc model.Pack
 		render.Narrative(a.Out, narrative)
 	}
 	if !narrative.Passed {
-		return fmt.Errorf("golden core path verification failed")
+		return fmt.Errorf("documented code path verification failed")
 	}
 	return nil
 }

@@ -2,4 +2,5 @@ package commentless
 
 import "testing"
 
-func TestGoldenStory(t *testing.T) {}
+//codoc:doc
+func TestStory(t *testing.T) {}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 func TestEmptyCollectionsExplainTheResult(t *testing.T) {

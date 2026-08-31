@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bartdeboer/codoc/internal/index"
-	"github.com/bartdeboer/codoc/internal/load"
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/index"
+	"github.com/bartdeboer/go-codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 func TestBuildExtractsAddressableRecords(t *testing.T) {
@@ -21,12 +21,16 @@ func TestBuildExtractsAddressableRecords(t *testing.T) {
 	if !strings.Contains(doc.Overview, "retrieves threads") {
 		t.Fatalf("overview = %q", doc.Overview)
 	}
-	if len(doc.GoldenPaths) != 1 {
-		t.Fatalf("golden paths = %#v", doc.GoldenPaths)
+	if len(doc.DocumentedTests) != 2 {
+		t.Fatalf("documented tests = %#v", doc.DocumentedTests)
 	}
-	golden := doc.GoldenPaths[0]
-	if golden.ID != "thread-retrieval" || golden.Title != "Thread Retrieval" || !strings.Contains(golden.Code, "GetThread") {
-		t.Fatalf("golden path = %#v", golden)
+	documented := doc.DocumentedTests[0]
+	if documented.ID != "thread-retrieval" || documented.Title != "Thread Retrieval" || !strings.Contains(documented.Code, "GetThread") {
+		t.Fatalf("documented test = %#v", documented)
+	}
+	omitted := doc.DocumentedTests[1]
+	if !omitted.CodeOmitted || omitted.Code != "" {
+		t.Fatalf("omitted test = %#v", omitted)
 	}
 	if len(doc.Workflows) != 2 || doc.Workflows[0].ID != "get-thread" {
 		t.Fatalf("workflows = %#v", doc.Workflows)
@@ -112,21 +116,21 @@ func contains(items []string, want string) bool {
 	return false
 }
 
-func TestBuildRejectsCommentlessGoldenTest(t *testing.T) {
+func TestBuildRejectsCommentlessDocumentedTest(t *testing.T) {
 	pkg, err := load.PackageAt("./testdata/commentless")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "requires a documentation comment") {
+	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "requires a prose comment") {
 		t.Fatalf("error=%v", err)
 	}
 }
-func TestBuildRejectsDuplicateGoldenIDs(t *testing.T) {
+func TestBuildRejectsDuplicateDocumentedIDs(t *testing.T) {
 	pkg, err := load.PackageAt("./testdata/duplicate")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "duplicate golden path ID") {
+	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "duplicate documented test ID") {
 		t.Fatalf("error=%v", err)
 	}
 }

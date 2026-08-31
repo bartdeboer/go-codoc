@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"regexp"
 
-	"github.com/bartdeboer/codoc/internal/load"
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 func Run(ctx context.Context, pkg *load.Package, kind, target, testName string) model.Verification {

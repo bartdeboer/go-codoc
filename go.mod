@@ -1,4 +1,4 @@
-module github.com/bartdeboer/codoc
+module github.com/bartdeboer/go-codoc
 
 go 1.24.0
 

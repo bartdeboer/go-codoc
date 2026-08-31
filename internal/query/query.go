@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 type Match struct {

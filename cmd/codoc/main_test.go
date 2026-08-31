@@ -30,7 +30,7 @@ func TestRunDefaultsToCurrentPackage(t *testing.T) {
 	if !strings.HasPrefix(out.String(), "Package fixture\n") {
 		t.Fatalf("output=%q", out.String())
 	}
-	for _, want := range []string{"Golden core paths", "Thread Retrieval", "PASS"} {
+	for _, want := range []string{"Documented code paths", "Thread Retrieval", "PASS"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("missing %q in %q", want, out.String())
 		}

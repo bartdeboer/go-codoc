@@ -6,15 +6,16 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
-	"github.com/bartdeboer/codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/load"
 )
 
-const goldenTimeout = 2 * time.Minute
+const documentedTimeout = 2 * time.Minute
 
-type GoldenResult struct {
+type DocumentedResult struct {
 	Passed bool
 	Tests  map[string]TestResult
 	Output string
@@ -29,17 +30,24 @@ type testEvent struct {
 	Output string
 }
 
-// RunGolden executes every promised golden path once in one bounded invocation.
-func RunGolden(ctx context.Context, pkg *load.Package) GoldenResult {
-	ctx, cancel := context.WithTimeout(ctx, goldenTimeout)
+// RunDocumented executes exactly the documented tests once in one bounded invocation.
+func RunDocumented(ctx context.Context, pkg *load.Package, testNames []string) DocumentedResult {
+	ctx, cancel := context.WithTimeout(ctx, documentedTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "test", "-json", "-count=1", "-run", "^TestGolden", ".")
+	alternatives := make([]string, len(testNames))
+	allowed := make(map[string]bool, len(testNames))
+	for i, name := range testNames {
+		alternatives[i] = regexp.QuoteMeta(name)
+		allowed[name] = true
+	}
+	pattern := "^(?:" + strings.Join(alternatives, "|") + ")$"
+	cmd := exec.CommandContext(ctx, "go", "test", "-json", "-count=1", "-run", pattern, ".")
 	cmd.Dir = pkg.Dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	result := GoldenResult{Passed: err == nil, Tests: map[string]TestResult{}, Output: stderr.String()}
+	result := DocumentedResult{Passed: err == nil, Tests: map[string]TestResult{}, Output: stderr.String()}
 	scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
 	for scanner.Scan() {
 		var event testEvent
@@ -53,7 +61,7 @@ func RunGolden(ctx context.Context, pkg *load.Package) GoldenResult {
 			}
 			continue
 		}
-		if !strings.HasPrefix(event.Test, "TestGolden") || strings.Contains(event.Test, "/") {
+		if !allowed[event.Test] || strings.Contains(event.Test, "/") {
 			continue
 		}
 		test := result.Tests[event.Test]

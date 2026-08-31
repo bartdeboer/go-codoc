@@ -1,7 +1,7 @@
 package query
 
 import (
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/model"
 	"testing"
 )
 

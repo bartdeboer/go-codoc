@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/model"
 	"testing"
 )
 
@@ -48,13 +48,13 @@ func TestWorkflowJSONUsesEmptyArrays(t *testing.T) {
 	}
 }
 
-func TestNarrativeWithoutGoldenPathsDoesNotExecuteTests(t *testing.T) {
+func TestNarrativeWithoutDocumentedTestsDoesNotExecuteTests(t *testing.T) {
 	var out bytes.Buffer
 	a := App{Out: &out}
-	if err := a.Narrative(context.Background(), nil, model.Package{Name: "leaf", GoldenPaths: []model.GoldenPath{}}, Options{}); err != nil {
+	if err := a.Narrative(context.Background(), nil, model.Package{Name: "leaf", DocumentedTests: []model.DocumentedTest{}}, Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("No golden core paths.")) {
+	if !bytes.Contains(out.Bytes(), []byte("No documented code paths.")) {
 		t.Fatalf("output=%q", out.String())
 	}
 }

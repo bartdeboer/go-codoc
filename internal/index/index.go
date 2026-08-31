@@ -13,15 +13,16 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
-	"github.com/bartdeboer/codoc/internal/load"
-	"github.com/bartdeboer/codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 var contractID = regexp.MustCompile(`^[a-z0-9]+(?:[/-][a-z0-9]+)*$`)
 
 func Build(pkg *load.Package) (model.Package, error) {
-	out := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name, Workflows: []model.Workflow{}, Contracts: []model.Contract{}, Symbols: []model.Symbol{}, GoldenPaths: []model.GoldenPath{}, Gaps: []string{}}
+	out := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name, Workflows: []model.Workflow{}, Contracts: []model.Contract{}, Symbols: []model.Symbol{}, DocumentedTests: []model.DocumentedTest{}, Gaps: []string{}}
 	for _, file := range pkg.Files {
 		if file.Name.Name == pkg.Name && out.Overview == "" && file.Doc != nil {
 			out.Overview = clean(file.Doc.Text())
@@ -38,7 +39,7 @@ func Build(pkg *load.Package) (model.Package, error) {
 	if err := validateContracts(out.Contracts); err != nil {
 		return model.Package{}, err
 	}
-	if err := validateGoldenPaths(out.GoldenPaths); err != nil {
+	if err := validateDocumentedTests(out.DocumentedTests); err != nil {
 		return model.Package{}, err
 	}
 	link(&out)
@@ -76,21 +77,30 @@ func examples(pkg *load.Package) []model.Workflow {
 
 func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Package) error {
 	d, ok := decl.(*ast.FuncDecl)
-	if ok && isGoldenTest(pkg, d) {
-		path := goldenPath(pkg, d)
-		if path.Summary == "" {
-			return fmt.Errorf("golden test %s requires a documentation comment", d.Name.Name)
-		}
-		out.GoldenPaths = append(out.GoldenPaths, path)
-		return nil
-	}
-	if ok && strings.HasPrefix(d.Name.Name, "Test") {
-		c, found, err := parseContract(pkg, d)
+	if ok && strings.HasSuffix(pkg.FSet.Position(d.Pos()).Filename, "_test.go") {
+		annotated, omitCode, err := documentedDirectives(d.Doc)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", position(pkg, d.Pos()).File, err)
 		}
-		if found {
-			out.Contracts = append(out.Contracts, c)
+		if annotated {
+			if !isGoTest(d) {
+				return fmt.Errorf("%s is marked codoc:doc but is not a valid Go test", d.Name.Name)
+			}
+			path := documentedTest(pkg, d, omitCode)
+			if path.Summary == "" {
+				return fmt.Errorf("documented test %s requires a prose comment", d.Name.Name)
+			}
+			out.DocumentedTests = append(out.DocumentedTests, path)
+			return nil
+		}
+		if strings.HasPrefix(d.Name.Name, "Test") {
+			contract, found, err := parseContract(pkg, d)
+			if err != nil {
+				return err
+			}
+			if found {
+				out.Contracts = append(out.Contracts, contract)
+			}
 		}
 		return nil
 	}
@@ -110,11 +120,39 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 	return nil
 }
 
-func isGoldenTest(pkg *load.Package, d *ast.FuncDecl) bool {
-	if !strings.HasSuffix(pkg.FSet.Position(d.Pos()).Filename, "_test.go") || d.Recv != nil {
+func documentedDirectives(doc *ast.CommentGroup) (annotated, omitCode bool, err error) {
+	if doc == nil {
+		return false, false, nil
+	}
+	for _, comment := range doc.List {
+		if !strings.HasPrefix(comment.Text, "//codoc:") {
+			continue
+		}
+		directive := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+		switch directive {
+		case "codoc:doc":
+			annotated = true
+		case "codoc:code omit":
+			omitCode = true
+		default:
+			if strings.HasPrefix(directive, "codoc:contract ") {
+				continue
+			}
+			return false, false, fmt.Errorf("unsupported directive %q", directive)
+		}
+	}
+	if omitCode && !annotated {
+		return false, false, fmt.Errorf("codoc:code omit requires codoc:doc")
+	}
+	return annotated, omitCode, nil
+}
+
+func isGoTest(d *ast.FuncDecl) bool {
+	if d.Recv != nil || !strings.HasPrefix(d.Name.Name, "Test") || len(d.Name.Name) == len("Test") {
 		return false
 	}
-	if !strings.HasPrefix(d.Name.Name, "TestGolden") || d.Name.Name == "TestGolden" {
+	first, _ := utf8.DecodeRuneInString(strings.TrimPrefix(d.Name.Name, "Test"))
+	if unicode.IsLower(first) {
 		return false
 	}
 	if d.Type.TypeParams != nil || d.Type.Results != nil || d.Type.Params == nil || len(d.Type.Params.List) != 1 {
@@ -136,13 +174,13 @@ func isGoldenTest(pkg *load.Package, d *ast.FuncDecl) bool {
 	return ok && packageName.Name == "testing"
 }
 
-func goldenPath(pkg *load.Package, d *ast.FuncDecl) model.GoldenPath {
-	name := strings.TrimPrefix(d.Name.Name, "TestGolden")
-	return model.GoldenPath{
-		Kind: "golden_path", ID: kebab(name), Title: title(name),
-		Summary: docText(d.Doc), TestName: d.Name.Name, Code: nodeText(pkg, d.Body),
-		Source: position(pkg, d.Pos()), Status: "not run",
+func documentedTest(pkg *load.Package, d *ast.FuncDecl, omitCode bool) model.DocumentedTest {
+	name := strings.TrimPrefix(d.Name.Name, "Test")
+	code := ""
+	if !omitCode {
+		code = nodeText(pkg, d.Body)
 	}
+	return model.DocumentedTest{Kind: "documented_test", ID: kebab(name), Title: title(name), Summary: docText(d.Doc), TestName: d.Name.Name, Code: code, CodeOmitted: omitCode, Source: position(pkg, d.Pos()), Status: "not run"}
 }
 
 func title(name string) string {
@@ -249,21 +287,18 @@ func documentationGaps(p model.Package) []string {
 	return gaps
 }
 func sortRecords(p *model.Package) {
-	sort.Slice(p.GoldenPaths, func(i, j int) bool {
-		return p.GoldenPaths[i].Source.File < p.GoldenPaths[j].Source.File || (p.GoldenPaths[i].Source.File == p.GoldenPaths[j].Source.File && p.GoldenPaths[i].Source.Line < p.GoldenPaths[j].Source.Line)
-	})
 	sort.Slice(p.Workflows, func(i, j int) bool { return p.Workflows[i].ID < p.Workflows[j].ID })
 	sort.Slice(p.Contracts, func(i, j int) bool { return p.Contracts[i].ID < p.Contracts[j].ID })
 	sort.Slice(p.Symbols, func(i, j int) bool { return p.Symbols[i].ID < p.Symbols[j].ID })
 }
-func validateGoldenPaths(paths []model.GoldenPath) error {
+func validateDocumentedTests(paths []model.DocumentedTest) error {
 	ids, names := map[string]bool{}, map[string]bool{}
 	for _, path := range paths {
 		if ids[path.ID] {
-			return fmt.Errorf("duplicate golden path ID %q", path.ID)
+			return fmt.Errorf("duplicate documented test ID %q", path.ID)
 		}
 		if names[path.TestName] {
-			return fmt.Errorf("duplicate golden test %q", path.TestName)
+			return fmt.Errorf("duplicate documented test %q", path.TestName)
 		}
 		ids[path.ID], names[path.TestName] = true, true
 	}

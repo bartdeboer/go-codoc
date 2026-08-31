@@ -32,4 +32,4 @@ type storySystem struct{}
 
 func (*storySystem) TrustBrowser() {}
 
-func TestGoldenProductionHelper() {}
+func TestDocumentedProductionHelper() {}

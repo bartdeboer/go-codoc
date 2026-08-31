@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/bartdeboer/codoc/internal/model"
-	"github.com/bartdeboer/codoc/internal/query"
+	"github.com/bartdeboer/go-codoc/internal/model"
+	"github.com/bartdeboer/go-codoc/internal/query"
 )
 
 func JSON(w io.Writer, value any) error {
@@ -168,18 +168,22 @@ func Narrative(w io.Writer, narrative model.Narrative) {
 	if narrative.Overview != "" {
 		fmt.Fprintf(w, "\n%s\n", narrative.Overview)
 	}
-	if len(narrative.GoldenPaths) == 0 {
-		fmt.Fprintln(w, "\nNo golden core paths.")
+	if len(narrative.DocumentedTests) == 0 {
+		fmt.Fprintln(w, "\nNo documented code paths.")
 		return
 	}
-	fmt.Fprintln(w, "\nGolden core paths")
-	for _, path := range narrative.GoldenPaths {
+	fmt.Fprintln(w, "\nDocumented code paths")
+	for _, path := range narrative.DocumentedTests {
 		fmt.Fprintf(w, "\n%s\n", path.Title)
 		if path.Summary != "" {
 			fmt.Fprintf(w, "%s\n", path.Summary)
 		}
-		fmt.Fprintln(w, "\nTest:")
-		indent(w, path.Code)
+		if path.CodeOmitted {
+			fmt.Fprintln(w, "\nTest body omitted by //codoc:code omit.")
+		} else {
+			fmt.Fprintln(w, "\nTest:")
+			indent(w, path.Code)
+		}
 		fmt.Fprintf(w, "\nSource: %s\n%s\n", source(path.Source), strings.ToUpper(path.Status))
 		if path.Status != "pass" && path.Output != "" {
 			indent(w, path.Output)

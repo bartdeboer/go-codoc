@@ -31,16 +31,28 @@ func ExampleSystem_trustedDeviceElevation() {
 	// Output: trusted
 }
 
-// ExampleSystem_illustrative has no golden output and is not a workflow.
+// ExampleSystem_illustrative has no expected output and is not a workflow.
 func ExampleSystem_illustrative() { fmt.Println("not executed by go test") }
 
-// TestGoldenThreadRetrieval demonstrates the package's core retrieval path.
-func TestGoldenThreadRetrieval(t *testing.T) {
+// TestThreadRetrieval demonstrates the package's core retrieval path.
+//
+//codoc:doc
+func TestThreadRetrieval(t *testing.T) {
 	thread, err := new(Client).GetThread(context.Background(), "thread-123")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if thread.ID != "thread-123" {
 		t.Fatalf("ID = %q", thread.ID)
+	}
+}
+
+// TestHiddenMaintenance verifies a documented path whose implementation is intentionally omitted.
+//
+//codoc:doc
+//codoc:code omit
+func TestHiddenMaintenance(t *testing.T) {
+	if ErrNotFound.Error() == "" {
+		t.Fatal("missing sentinel")
 	}
 }

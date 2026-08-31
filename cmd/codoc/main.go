@@ -6,10 +6,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/bartdeboer/codoc/internal/app"
-	"github.com/bartdeboer/codoc/internal/load"
-	"github.com/bartdeboer/codoc/internal/model"
 	"github.com/bartdeboer/go-clir"
+	"github.com/bartdeboer/go-codoc/internal/app"
+	"github.com/bartdeboer/go-codoc/internal/load"
+	"github.com/bartdeboer/go-codoc/internal/model"
 )
 
 type commandContext struct {
@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 func buildRouter(a app.App, g globalOptions) *clir.Router {
 	r := clir.New()
 	r.Routes(func(b *clir.Builder) {
-		b.Describe("", "Bare codoc runs documented TestGolden core paths; retrieval commands do not run tests. Global options: --json, --format text|json, -C <dir>, --package <pattern>.")
+		b.Describe("", "Bare codoc runs valid Go tests marked //codoc:doc; retrieval commands do not run tests. Global options: --json, --format text|json, -C <dir>, --package <pattern>.")
 		commands := clir.WithContext(b, func(req *clir.Request) (commandContext, error) {
 			source, doc, err := a.Load(req.Context(), g.workDir, g.pattern)
 			return commandContext{source, doc, app.Options{Format: g.format}}, err
