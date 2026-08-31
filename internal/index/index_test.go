@@ -21,9 +21,26 @@ func TestBuildExtractsAddressableRecords(t *testing.T) {
 	if !strings.Contains(doc.Overview, "retrieves threads") {
 		t.Fatalf("overview = %q", doc.Overview)
 	}
-	if len(doc.Workflows) != 1 || doc.Workflows[0].ID != "get-thread" {
+	if len(doc.Workflows) != 2 || doc.Workflows[0].ID != "get-thread" {
 		t.Fatalf("workflows = %#v", doc.Workflows)
 	}
+
+	workflow := doc.Workflows[0]
+	if workflow.PrimarySymbol != "Client.GetThread" || workflow.ExpectedOutput != "thread-123\n" {
+		t.Fatalf("workflow association/output = %#v", workflow)
+	}
+	trusted := workflowByID(doc, "trusted-device-elevation")
+	if trusted == nil || trusted.PrimarySymbol != "System" {
+		t.Fatalf("trusted workflow = %#v", trusted)
+	}
+	if symbol(doc, "storySystem.TrustBrowser") != nil {
+		t.Fatal("method on unexported receiver was indexed")
+	}
+	system := symbol(doc, "System")
+	if system == nil || !contains(system.RelatedWorkflows, "trusted-device-elevation") {
+		t.Fatalf("System workflows = %#v", system)
+	}
+
 	if len(doc.Contracts) != 1 || doc.Contracts[0].ID != "get-thread/not-found" {
 		t.Fatalf("contracts = %#v", doc.Contracts)
 	}
@@ -65,4 +82,22 @@ func symbol(doc model.Package, id string) *model.Symbol {
 		}
 	}
 	return nil
+}
+
+func workflowByID(doc model.Package, id string) *model.Workflow {
+	for i := range doc.Workflows {
+		if doc.Workflows[i].ID == id {
+			return &doc.Workflows[i]
+		}
+	}
+	return nil
+}
+
+func contains(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

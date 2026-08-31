@@ -10,29 +10,31 @@ import (
 )
 
 type Match struct {
-	Kind    string `json:"kind"`
-	ID      string `json:"id"`
-	Summary string `json:"summary,omitempty"`
-	Score   int    `json:"score"`
+	Kind    string         `json:"kind"`
+	ID      string         `json:"id"`
+	Summary string         `json:"summary,omitempty"`
+	Score   int            `json:"score"`
+	Source  model.Position `json:"source"`
 }
 
 func Search(pkg model.Package, text string, limit int) []Match {
 	terms := words(text)
-	var matches []Match
-	for _, w := range pkg.Workflows {
-		if score := rank(terms, w.ID+" "+w.Summary+" "+strings.Join(w.RelatedSymbols, " ")); score > 0 {
-			matches = append(matches, Match{"workflow", w.ID, w.Summary, score})
-		}
+	matches := []Match{}
+	for _, workflow := range pkg.Workflows {
+		document := workflow.ID + " " + workflow.Summary + " " + workflow.Code + " " + strings.Join(workflow.RelatedSymbols, " ")
+		matches = addMatch(matches, terms, "workflow", workflow.ID, workflow.Summary, document, workflow.Source)
 	}
-	for _, c := range pkg.Contracts {
-		if score := rank(terms, c.ID+" "+c.Summary+" "+strings.Join(c.RelatedSymbols, " ")); score > 0 {
-			matches = append(matches, Match{"contract", c.ID, c.Summary, score})
-		}
+	for _, contract := range pkg.Contracts {
+		document := contract.ID + " " + contract.Summary + " " + strings.Join(contract.RelatedSymbols, " ")
+		matches = addMatch(matches, terms, "contract", contract.ID, contract.Summary, document, contract.Source)
 	}
-	for _, s := range pkg.Symbols {
-		if score := rank(terms, s.ID+" "+s.Doc); score > 0 {
-			matches = append(matches, Match{"symbol", s.ID, s.Doc, score})
+	for _, symbol := range pkg.Symbols {
+		summary := symbol.Doc
+		if summary == "" {
+			summary = symbol.Signature
 		}
+		document := symbol.ID + " " + symbol.Doc + " " + symbol.Signature
+		matches = addMatch(matches, terms, "symbol", symbol.ID, summary, document, symbol.Source)
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].Score == matches[j].Score {
@@ -45,19 +47,28 @@ func Search(pkg model.Package, text string, limit int) []Match {
 	}
 	return matches
 }
+func addMatch(matches []Match, terms []string, kind, id, summary, document string, source model.Position) []Match {
+	score := rank(terms, document)
+	if score == 0 {
+		return matches
+	}
+	return append(matches, Match{Kind: kind, ID: id, Summary: summary, Score: score, Source: source})
+}
 func rank(terms []string, document string) int {
-	doc := strings.ToLower(document)
+	lower := strings.ToLower(document)
+	fields := strings.Fields(lower)
 	score := 0
 	for _, term := range terms {
-		if strings.Contains(doc, term) {
-			score++
-			if strings.Contains(strings.ToLower(strings.Fields(document)[0]), term) {
-				score += 2
-			}
+		if !strings.Contains(lower, term) {
+			continue
+		}
+		score++
+		if len(fields) > 0 && strings.Contains(fields[0], term) {
+			score += 2
 		}
 	}
 	return score
 }
-func words(s string) []string {
-	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+func words(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }

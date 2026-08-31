@@ -22,3 +22,12 @@ func (c *Client) GetThread(ctx context.Context, id string) (*Thread, error) {
 	}
 	return &Thread{ID: id}, nil
 }
+
+// System invokes operator commands.
+type System interface {
+	InvokeOperatorCLI() error
+}
+
+type storySystem struct{}
+
+func (*storySystem) TrustBrowser() {}

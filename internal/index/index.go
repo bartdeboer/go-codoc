@@ -1,10 +1,11 @@
-// Package index turns Go syntax into compact documentation records.
+// Package index turns Go's documentation model and syntax into compact records.
 package index
 
 import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/doc"
 	"go/printer"
 	"go/token"
 	"path/filepath"
@@ -20,45 +21,71 @@ import (
 var contractID = regexp.MustCompile(`^[a-z0-9]+(?:[/-][a-z0-9]+)*$`)
 
 func Build(pkg *load.Package) (model.Package, error) {
-	result := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name}
+	out := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name, Workflows: []model.Workflow{}, Contracts: []model.Contract{}, Symbols: []model.Symbol{}, Gaps: []string{}}
 	for _, file := range pkg.Files {
-		if file.Name.Name == pkg.Name && result.Overview == "" && file.Doc != nil {
-			result.Overview = clean(file.Doc.Text())
+		if file.Name.Name == pkg.Name && out.Overview == "" && file.Doc != nil {
+			out.Overview = clean(file.Doc.Text())
 		}
+	}
+	out.Workflows = examples(pkg)
+	for _, file := range pkg.Files {
 		for _, decl := range file.Decls {
-			if err := inspectDecl(pkg, file, decl, &result); err != nil {
+			if err := inspectDecl(pkg, file, decl, &out); err != nil {
 				return model.Package{}, err
 			}
 		}
 	}
-	if err := validateContracts(result.Contracts); err != nil {
+	if err := validateContracts(out.Contracts); err != nil {
 		return model.Package{}, err
 	}
-	link(&result)
-	sort.Slice(result.Workflows, func(i, j int) bool { return result.Workflows[i].ID < result.Workflows[j].ID })
-	sort.Slice(result.Contracts, func(i, j int) bool { return result.Contracts[i].ID < result.Contracts[j].ID })
-	sort.Slice(result.Symbols, func(i, j int) bool { return result.Symbols[i].ID < result.Symbols[j].ID })
-	return result, nil
+	link(&out)
+	sortRecords(&out)
+	out.Gaps = documentationGaps(out)
+	return out, nil
+}
+
+func examples(pkg *load.Package) []model.Workflow {
+	var out []model.Workflow
+	for _, ex := range doc.Examples(pkg.Files...) {
+		base, suffix := ex.Name, ex.Suffix
+		if suffix == "" {
+			if i := strings.LastIndexByte(base, '_'); i >= 0 && i+1 < len(base) && unicode.IsLower(rune(base[i+1])) {
+				suffix, base = base[i+1:], base[:i]
+			}
+		}
+		primary := strings.ReplaceAll(base, "_", ".")
+		idSource := suffix
+		if idSource == "" {
+			idSource = base
+			if i := strings.LastIndex(idSource, "_"); i >= 0 {
+				idSource = idSource[i+1:]
+			}
+		}
+		name := "Example" + ex.Name
+		pos := findFunction(pkg, name)
+		out = append(out, model.Workflow{Kind: "workflow", ID: kebab(idSource), Summary: clean(ex.Doc), ExampleName: name, PrimarySymbol: primary, Code: nodeText(pkg, ex.Code), ExpectedOutput: ex.Output, EmptyOutput: ex.EmptyOutput, RelatedSymbols: referencedNames(ex.Code), RelatedContracts: []string{}, Verification: "not run", Source: pos})
+	}
+	return out
 }
 
 func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Package) error {
+	d, ok := decl.(*ast.FuncDecl)
+	if ok && strings.HasPrefix(d.Name.Name, "Test") {
+		c, found, err := parseContract(pkg, d)
+		if err != nil {
+			return err
+		}
+		if found {
+			out.Contracts = append(out.Contracts, c)
+		}
+		return nil
+	}
+	if strings.HasSuffix(pkg.FSet.Position(decl.Pos()).Filename, "_test.go") {
+		return nil
+	}
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
-		if strings.HasPrefix(d.Name.Name, "Example") {
-			out.Workflows = append(out.Workflows, workflow(pkg, d))
-			return nil
-		}
-		if strings.HasPrefix(d.Name.Name, "Test") {
-			contract, ok, err := parseContract(pkg, d)
-			if err != nil {
-				return err
-			}
-			if ok {
-				out.Contracts = append(out.Contracts, contract)
-			}
-			return nil
-		}
-		if d.Name.IsExported() {
+		if d.Name.IsExported() && (d.Recv == nil || ast.IsExported(receiverName(d.Recv.List[0].Type))) {
 			out.Symbols = append(out.Symbols, funcSymbol(pkg, d))
 		}
 	case *ast.GenDecl:
@@ -67,11 +94,6 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 		}
 	}
 	return nil
-}
-
-func workflow(pkg *load.Package, d *ast.FuncDecl) model.Workflow {
-	id := workflowID(d.Name.Name)
-	return model.Workflow{Kind: "workflow", ID: id, Summary: clean(docWithoutOutput(d.Doc)), ExampleName: d.Name.Name, Code: nodeText(pkg, d.Body), RelatedSymbols: referencedNames(d.Body), Source: position(pkg, d.Pos())}
 }
 
 func parseContract(pkg *load.Package, d *ast.FuncDecl) (model.Contract, bool, error) {
@@ -101,63 +123,70 @@ func parseContract(pkg *load.Package, d *ast.FuncDecl) (model.Contract, bool, er
 	if len(summary) == 0 {
 		return model.Contract{}, false, fmt.Errorf("contract %q has no summary", id)
 	}
-	return model.Contract{Kind: "contract", ID: id, Summary: strings.Join(summary, "\n"), TestName: d.Name.Name, RelatedSymbols: referencedNames(d.Body), Source: position(pkg, d.Pos())}, true, nil
+	return model.Contract{Kind: "contract", ID: id, Summary: strings.Join(summary, "\n"), TestName: d.Name.Name, RelatedSymbols: referencedNames(d.Body), Verification: "not run", Source: position(pkg, d.Pos())}, true, nil
 }
 
 func funcSymbol(pkg *load.Package, d *ast.FuncDecl) model.Symbol {
 	id := d.Name.Name
-	if d.Recv != nil && len(d.Recv.List) > 0 {
+	if d.Recv != nil {
 		id = receiverName(d.Recv.List[0].Type) + "." + id
 	}
-	return model.Symbol{Kind: "symbol", ID: id, DeclarationKind: "func", Signature: funcSignature(pkg, d), Doc: docText(d.Doc), Source: position(pkg, d.Pos())}
+	return model.Symbol{Kind: "symbol", ID: id, DeclarationKind: "func", Signature: funcSignature(pkg, d), Doc: docText(d.Doc), RelatedWorkflows: []string{}, RelatedContracts: []string{}, Source: position(pkg, d.Pos())}
 }
-
 func genSymbols(pkg *load.Package, decl *ast.GenDecl, spec ast.Spec) []model.Symbol {
-	var result []model.Symbol
+	var out []model.Symbol
 	switch s := spec.(type) {
 	case *ast.TypeSpec:
 		if s.Name.IsExported() {
-			result = append(result, model.Symbol{Kind: "symbol", ID: s.Name.Name, DeclarationKind: "type", Signature: "type " + nodeText(pkg, s), Doc: firstDoc(s.Doc, decl.Doc), Source: position(pkg, s.Pos())})
+			out = append(out, model.Symbol{Kind: "symbol", ID: s.Name.Name, DeclarationKind: "type", Signature: "type " + nodeText(pkg, s), Doc: firstDoc(s.Doc, decl.Doc), RelatedWorkflows: []string{}, RelatedContracts: []string{}, Source: position(pkg, s.Pos())})
 		}
 	case *ast.ValueSpec:
 		kind := strings.ToLower(decl.Tok.String())
 		for _, name := range s.Names {
 			if name.IsExported() {
-				result = append(result, model.Symbol{Kind: "symbol", ID: name.Name, DeclarationKind: kind, Signature: kind + " " + nodeText(pkg, s), Doc: firstDoc(s.Doc, decl.Doc), Source: position(pkg, s.Pos())})
+				out = append(out, model.Symbol{Kind: "symbol", ID: name.Name, DeclarationKind: kind, Signature: kind + " " + nodeText(pkg, s), Doc: firstDoc(s.Doc, decl.Doc), RelatedWorkflows: []string{}, RelatedContracts: []string{}, Source: position(pkg, s.Pos())})
 			}
 		}
 	}
-	return result
+	return out
 }
 
-func validateContracts(items []model.Contract) error {
-	seen := map[string]bool{}
-	for _, x := range items {
-		if seen[x.ID] {
-			return fmt.Errorf("duplicate contract ID %q", x.ID)
-		}
-		seen[x.ID] = true
-	}
-	return nil
-}
 func link(pkg *model.Package) {
 	symbols := map[string]*model.Symbol{}
 	for i := range pkg.Symbols {
 		symbols[pkg.Symbols[i].ID] = &pkg.Symbols[i]
-		symbols[last(pkg.Symbols[i].ID)] = &pkg.Symbols[i]
 	}
 	for i := range pkg.Workflows {
-		pkg.Workflows[i].RelatedSymbols = known(pkg.Workflows[i].RelatedSymbols, symbols)
-		for _, n := range pkg.Workflows[i].RelatedSymbols {
-			s := symbols[n]
-			s.RelatedWorkflows = appendUnique(s.RelatedWorkflows, pkg.Workflows[i].ID)
+		w := &pkg.Workflows[i]
+		var linked []string
+		if s := symbols[w.PrimarySymbol]; s != nil {
+			linked = append(linked, s.ID)
+		}
+		for _, name := range w.RelatedSymbols {
+			for id, s := range symbols {
+				if id == name || last(id) == name {
+					linked = appendUnique(linked, s.ID)
+				}
+			}
+		}
+		w.RelatedSymbols = sorted(linked)
+		for _, id := range w.RelatedSymbols {
+			symbols[id].RelatedWorkflows = appendUnique(symbols[id].RelatedWorkflows, w.ID)
 		}
 	}
 	for i := range pkg.Contracts {
-		pkg.Contracts[i].RelatedSymbols = known(pkg.Contracts[i].RelatedSymbols, symbols)
-		for _, n := range pkg.Contracts[i].RelatedSymbols {
-			s := symbols[n]
-			s.RelatedContracts = appendUnique(s.RelatedContracts, pkg.Contracts[i].ID)
+		c := &pkg.Contracts[i]
+		var linked []string
+		for _, name := range c.RelatedSymbols {
+			for id := range symbols {
+				if id == name || last(id) == name {
+					linked = appendUnique(linked, id)
+				}
+			}
+		}
+		c.RelatedSymbols = sorted(linked)
+		for _, id := range c.RelatedSymbols {
+			symbols[id].RelatedContracts = appendUnique(symbols[id].RelatedContracts, c.ID)
 		}
 	}
 	for i := range pkg.Workflows {
@@ -168,15 +197,43 @@ func link(pkg *model.Package) {
 		}
 	}
 }
-func known(names []string, symbols map[string]*model.Symbol) []string {
-	var out []string
-	for _, n := range names {
-		if s := symbols[n]; s != nil {
-			out = appendUnique(out, s.ID)
+func documentationGaps(p model.Package) []string {
+	var gaps []string
+	if p.Overview == "" {
+		gaps = append(gaps, "package overview missing")
+	}
+	if len(p.Workflows) == 0 {
+		gaps = append(gaps, "no workflows")
+	}
+	if len(p.Contracts) == 0 {
+		gaps = append(gaps, "no documented contracts")
+	}
+	return gaps
+}
+func sortRecords(p *model.Package) {
+	sort.Slice(p.Workflows, func(i, j int) bool { return p.Workflows[i].ID < p.Workflows[j].ID })
+	sort.Slice(p.Contracts, func(i, j int) bool { return p.Contracts[i].ID < p.Contracts[j].ID })
+	sort.Slice(p.Symbols, func(i, j int) bool { return p.Symbols[i].ID < p.Symbols[j].ID })
+}
+func validateContracts(xs []model.Contract) error {
+	seen := map[string]bool{}
+	for _, x := range xs {
+		if seen[x.ID] {
+			return fmt.Errorf("duplicate contract ID %q", x.ID)
+		}
+		seen[x.ID] = true
+	}
+	return nil
+}
+func findFunction(pkg *load.Package, name string) model.Position {
+	for _, f := range pkg.Files {
+		for _, d := range f.Decls {
+			if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == name {
+				return position(pkg, fn.Pos())
+			}
 		}
 	}
-	sort.Strings(out)
-	return out
+	return model.Position{}
 }
 func referencedNames(n ast.Node) []string {
 	var out []string
@@ -195,38 +252,12 @@ func referencedNames(n ast.Node) []string {
 	})
 	return out
 }
-func workflowID(name string) string {
-	s := strings.TrimPrefix(name, "Example")
-	if s == "" {
-		return "example"
-	}
-	parts := strings.Split(s, "_")
-	if len(parts) > 1 {
-		s = strings.Join(parts[1:], "-")
-	}
-	return kebab(s)
-}
-func kebab(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if r == '_' {
-			b.WriteByte('-')
-			continue
-		}
-		if unicode.IsUpper(r) && i > 0 {
-			b.WriteByte('-')
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return strings.Trim(b.String(), "-")
-}
 func funcSignature(pkg *load.Package, d *ast.FuncDecl) string {
 	copy := *d
 	copy.Doc = nil
 	copy.Body = nil
 	return nodeText(pkg, &copy)
 }
-
 func receiverName(e ast.Expr) string {
 	switch x := e.(type) {
 	case *ast.Ident:
@@ -253,6 +284,20 @@ func position(pkg *load.Package, p token.Pos) model.Position {
 	}
 	return model.Position{File: filepath.ToSlash(name), Line: x.Line}
 }
+func kebab(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r == '_' || r == '/' {
+			b.WriteByte('-')
+			continue
+		}
+		if unicode.IsUpper(r) && i > 0 {
+			b.WriteByte('-')
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return strings.Trim(b.String(), "-")
+}
 func clean(s string) string { return strings.TrimSpace(s) }
 func docText(d *ast.CommentGroup) string {
 	if d == nil {
@@ -266,16 +311,6 @@ func firstDoc(a, b *ast.CommentGroup) string {
 	}
 	return docText(b)
 }
-func docWithoutOutput(d *ast.CommentGroup) string {
-	if d == nil {
-		return ""
-	}
-	text := d.Text()
-	if i := strings.Index(text, "Output:"); i >= 0 {
-		text = text[:i]
-	}
-	return text
-}
 func appendUnique(xs []string, x string) []string {
 	for _, v := range xs {
 		if v == x {
@@ -283,6 +318,13 @@ func appendUnique(xs []string, x string) []string {
 		}
 	}
 	return append(xs, x)
+}
+func sorted(xs []string) []string {
+	sort.Strings(xs)
+	if xs == nil {
+		return []string{}
+	}
+	return xs
 }
 func last(s string) string {
 	if i := strings.LastIndex(s, "."); i >= 0 {

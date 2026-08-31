@@ -9,21 +9,18 @@ import (
 	"testing"
 )
 
-func TestOptions(t *testing.T) {
-	got, err := options([]string{"--format", "json"})
+func TestGlobalOptionsCanAppearAnywhere(t *testing.T) {
+	g, args, err := parseGlobalOptions([]string{"symbol", "Client.GetThread", "--json", "-C", "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Format != "json" {
-		t.Fatalf("format=%q", got.Format)
+	if g.format != "json" || g.workDir != "fixture" {
+		t.Fatalf("options=%+v", g)
+	}
+	if strings.Join(args, " ") != "symbol Client.GetThread" {
+		t.Fatalf("args=%v", args)
 	}
 }
-func TestOptionsRejectsUnknownArguments(t *testing.T) {
-	if _, err := options([]string{"--source"}); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
 func TestRunDefaultsToCurrentPackage(t *testing.T) {
 	inFixture(t)
 	var out bytes.Buffer
@@ -31,21 +28,29 @@ func TestRunDefaultsToCurrentPackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(out.String(), "Package fixture\n") {
-		t.Fatalf("output = %q", out.String())
+		t.Fatalf("output=%q", out.String())
 	}
 }
-
-func TestRunContractWithoutIDListsCurrentPackageContracts(t *testing.T) {
+func TestCurrentPackageJSON(t *testing.T) {
 	inFixture(t)
 	var out bytes.Buffer
-	if err := run(context.Background(), []string{"contract"}, &out); err != nil {
+	if err := run(context.Background(), []string{"symbol", "Client.GetThread", "--json"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "get-thread/not-found") {
-		t.Fatalf("output = %q", out.String())
+	if !strings.Contains(out.String(), `"id": "Client.GetThread"`) {
+		t.Fatalf("output=%q", out.String())
 	}
 }
-
+func TestVerifyWorkflow(t *testing.T) {
+	inFixture(t)
+	var out bytes.Buffer
+	if err := run(context.Background(), []string{"verify", "workflow", "get-thread"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "PASS workflow get-thread") {
+		t.Fatalf("output=%q", out.String())
+	}
+}
 func inFixture(t *testing.T) {
 	t.Helper()
 	old, err := os.Getwd()

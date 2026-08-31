@@ -19,13 +19,13 @@ func TestLocalPatternTreatsExistingDirectoryAsRelative(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
-	if got := localPattern("contract"); got != "./contract" {
+	if got := localPattern("", "contract"); got != "./contract" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestLocalPatternPreservesImportPath(t *testing.T) {
-	if got := localPattern("example.com/project/contract"); got != "example.com/project/contract" {
+	if got := localPattern("", "example.com/project/contract"); got != "example.com/project/contract" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -40,7 +40,7 @@ func TestLocalPatternRecognizesCurrentPackageName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(old) })
-	if got := localPattern("fixture"); got != "." {
+	if got := localPattern("", "fixture"); got != "." {
 		t.Fatalf("got %q", got)
 	}
 }

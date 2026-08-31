@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/bartdeboer/codoc/internal/app"
+	"github.com/bartdeboer/codoc/internal/load"
 	"github.com/bartdeboer/codoc/internal/model"
 	"github.com/bartdeboer/go-clir"
 )
+
+type commandContext struct {
+	source  *load.Package
+	doc     model.Package
+	options app.Options
+}
+type globalOptions struct{ workDir, pattern, format string }
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.Stdout); err != nil {
@@ -18,132 +25,92 @@ func main() {
 		os.Exit(1)
 	}
 }
-
 func run(ctx context.Context, args []string, out io.Writer) error {
-	a := app.App{Out: out}
-	if len(args) == 0 {
-		pkg, err := a.Load(".")
-		if err != nil {
-			return err
-		}
-		return a.Package(pkg, app.Options{Format: "text"})
+	globals, args, err := parseGlobalOptions(args)
+	if err != nil {
+		return err
 	}
-
-	router := buildRouter(a)
+	a := app.App{Out: out}
+	router := buildRouter(a, globals)
 	if clir.IsHelpRequest(args) {
 		return router.FPrintHelp(ctx, out, clir.StripHelpToken(args))
 	}
+	if len(args) == 0 {
+		source, doc, err := a.Load(ctx, globals.workDir, globals.pattern)
+		_ = source
+		if err != nil {
+			return err
+		}
+		return a.Package(doc, app.Options{Format: globals.format})
+	}
 	return router.Run(ctx, args)
 }
-
-func buildRouter(a app.App) *clir.Router {
+func buildRouter(a app.App, g globalOptions) *clir.Router {
 	r := clir.New()
 	r.Routes(func(b *clir.Builder) {
-		b.Describe("", "Inspect the current Go package by default; pass a package path when needed.")
-		packages := clir.WithContext(b, func(req *clir.Request) (model.Package, error) {
-			pattern := req.Params["package"]
-			if pattern == "" {
-				pattern = "."
-			}
-			return a.Load(pattern)
+		b.Describe("", "Inspect the current Go package. Global options: --json, --format text|json, -C <dir>, --package <pattern>.")
+		commands := clir.WithContext(b, func(req *clir.Request) (commandContext, error) {
+			source, doc, err := a.Load(req.Context(), g.workDir, g.pattern)
+			return commandContext{source, doc, app.Options{Format: g.format}}, err
 		})
-
-		packages.Handle("package", "Show the current package.", packageHandler(a))
-		packages.Handle("package <package>", "Show another package.", packageHandler(a))
-		packages.Handle("workflows", "List workflows in the current package.", workflowsHandler(a))
-		packages.Handle("workflows <package>", "List workflows in another package.", workflowsHandler(a))
-		packages.Handle("workflow", "List workflows in the current package.", workflowsHandler(a))
-		packages.Handle("workflow <workflow>", "Show a current-package workflow.", workflowHandler(a))
-		packages.Handle("workflow <package> <workflow>", "Show a workflow from another package.", workflowHandler(a))
-		packages.Handle("contracts", "List contracts in the current package.", contractsHandler(a))
-		packages.Handle("contracts <package>", "List contracts in another package.", contractsHandler(a))
-		packages.Handle("contract", "List contracts in the current package.", contractsHandler(a))
-		packages.Handle("contract <contract>", "Show a current-package contract.", contractHandler(a))
-		packages.Handle("contract <package> <contract>", "Show a contract from another package.", contractHandler(a))
-		packages.Handle("symbol <symbol>", "Show a current-package API symbol.", symbolHandler(a))
-		packages.Handle("symbol <package> <symbol>", "Show a symbol from another package.", symbolHandler(a))
-		packages.Handle("query <query>", "Search the current package documentation.", queryHandler(a))
-		packages.Handle("query <package> <query>", "Search another package documentation.", queryHandler(a))
+		commands.Handle("package", "Show package orientation and API map.", func(_ *clir.Request, c commandContext) error { return a.Package(c.doc, c.options) })
+		commands.Handle("workflows", "List workflows.", func(_ *clir.Request, c commandContext) error { return a.Workflows(c.doc, c.options) })
+		commands.Handle("workflow <workflow>", "Show one workflow.", func(req *clir.Request, c commandContext) error {
+			return a.Workflow(c.doc, req.Params["workflow"], c.options)
+		})
+		commands.Handle("contracts", "List documented contracts.", func(_ *clir.Request, c commandContext) error { return a.Contracts(c.doc, c.options) })
+		commands.Handle("contract <contract>", "Show one documented contract.", func(req *clir.Request, c commandContext) error {
+			return a.Contract(c.doc, req.Params["contract"], c.options)
+		})
+		commands.Handle("symbol <symbol>", "Show one public API symbol.", func(req *clir.Request, c commandContext) error {
+			return a.Symbol(c.doc, req.Params["symbol"], c.options)
+		})
+		search := func(req *clir.Request, c commandContext) error { return a.Search(c.doc, req.Params["text"], c.options) }
+		commands.Handle("search <text>", "Search documentation records.", search)
+		commands.Handle("query <text>", "Alias for search.", search)
+		commands.Handle("verify", "Run package tests explicitly.", func(req *clir.Request, c commandContext) error {
+			return a.Verify(req.Context(), c.source, c.doc, "package", "", c.options)
+		})
+		commands.Handle("verify workflow <workflow>", "Run one workflow example.", func(req *clir.Request, c commandContext) error {
+			return a.Verify(req.Context(), c.source, c.doc, "workflow", req.Params["workflow"], c.options)
+		})
+		commands.Handle("verify contract <contract>", "Run one contract test.", func(req *clir.Request, c commandContext) error {
+			return a.Verify(req.Context(), c.source, c.doc, "contract", req.Params["contract"], c.options)
+		})
 	})
 	return r
 }
-
-func packageHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
+func parseGlobalOptions(args []string) (globalOptions, []string, error) {
+	g := globalOptions{pattern: ".", format: "text"}
+	rest := []string{}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json":
+			g.format = "json"
+		case "--format":
+			if i+1 >= len(args) {
+				return g, nil, fmt.Errorf("--format requires text or json")
+			}
+			i++
+			g.format = args[i]
+		case "-C":
+			if i+1 >= len(args) {
+				return g, nil, fmt.Errorf("-C requires a directory")
+			}
+			i++
+			g.workDir = args[i]
+		case "--package":
+			if i+1 >= len(args) {
+				return g, nil, fmt.Errorf("--package requires a pattern")
+			}
+			i++
+			g.pattern = args[i]
+		default:
+			rest = append(rest, args[i])
 		}
-		return a.Package(p, o)
 	}
-}
-func workflowsHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Workflows(p, o)
+	if g.format != "text" && g.format != "json" {
+		return g, nil, fmt.Errorf("unsupported format %q (want text or json)", g.format)
 	}
-}
-func workflowHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Workflow(p, req.Params["workflow"], o)
-	}
-}
-func contractsHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Contracts(p, o)
-	}
-}
-func contractHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Contract(p, req.Params["contract"], o)
-	}
-}
-func symbolHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Symbol(p, req.Params["symbol"], o)
-	}
-}
-func queryHandler(a app.App) clir.ContextHandler[model.Package] {
-	return func(req *clir.Request, p model.Package) error {
-		o, err := options(req.Extra)
-		if err != nil {
-			return err
-		}
-		return a.Query(p, req.Params["query"], o)
-	}
-}
-
-func options(args []string) (app.Options, error) {
-	o := app.Options{Format: "text"}
-	for len(args) > 0 {
-		if len(args) == 2 && args[0] == "--format" {
-			o.Format = args[1]
-			args = args[2:]
-			continue
-		}
-		return o, fmt.Errorf("unexpected arguments: %s", strings.Join(args, " "))
-	}
-	if o.Format != "text" && o.Format != "json" {
-		return o, fmt.Errorf("unsupported format %q (want text or json)", o.Format)
-	}
-	return o, nil
+	return g, rest, nil
 }

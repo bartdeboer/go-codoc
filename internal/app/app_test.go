@@ -31,3 +31,18 @@ func TestWorkflowNotFound(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestWorkflowJSONUsesEmptyArrays(t *testing.T) {
+	var out bytes.Buffer
+	a := App{Out: &out}
+	p := model.Package{Workflows: []model.Workflow{{Kind: "workflow", ID: "example", ExampleName: "Example"}}}
+	if err := a.Workflow(p, "example", Options{Format: "json"}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(out.Bytes(), []byte("null")) {
+		t.Fatalf("JSON contains null: %s", out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte(`"related_symbols": []`)) {
+		t.Fatalf("missing empty array: %s", out.String())
+	}
+}

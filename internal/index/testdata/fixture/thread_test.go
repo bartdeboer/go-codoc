@@ -24,3 +24,9 @@ func TestGetThreadNotFound(t *testing.T) {
 }
 
 func TestUnmarked(t *testing.T) { t.Log("not documentation") }
+
+// ExampleSystem_trustedDeviceElevation demonstrates a trusted-device flow.
+func ExampleSystem_trustedDeviceElevation() {
+	fmt.Println("trusted")
+	// Output: trusted
+}

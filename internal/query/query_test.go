@@ -12,3 +12,11 @@ func TestSearchRanksWorkflowIdentifier(t *testing.T) {
 		t.Fatalf("matches = %#v", got)
 	}
 }
+
+func TestSearchIncludesTypeSignatures(t *testing.T) {
+	p := model.Package{Symbols: []model.Symbol{{ID: "System", Signature: "type System interface { InvokeOperatorCLI() error }"}}}
+	got := Search(p, "InvokeOperatorCLI", 5)
+	if len(got) != 1 || got[0].ID != "System" {
+		t.Fatalf("matches=%#v", got)
+	}
+}
