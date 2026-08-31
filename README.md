@@ -4,7 +4,18 @@
 It retrieves package orientation, executable workflows, explicit behavioral
 contracts, and individual API symbols without dumping an entire package.
 
-The project is at foundation stage. See `codoc help` for its command surface.
+From inside a Go package, run `codoc` for its overview. Current-package
+commands need no package argument:
+
+```sh
+codoc
+codoc workflows
+codoc contract get-thread/not-found
+codoc symbol Client.GetThread
+```
+
+Pass a package only when inspecting another package, for example
+`codoc package contract` from a module root. See `codoc help` for all commands.
 
 ## Development
 

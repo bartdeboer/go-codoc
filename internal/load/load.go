@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type Package struct {
@@ -34,6 +35,7 @@ type goListPackage struct {
 }
 
 func PackageAt(pattern string) (*Package, error) {
+	pattern = localPattern(pattern)
 	cmd := exec.Command("go", "list", "-json", pattern)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -64,4 +66,22 @@ func PackageAt(pattern string) (*Package, error) {
 		pkg.Sources[path] = source
 	}
 	return pkg, nil
+}
+
+// localPattern makes package names behave like paths when that is unambiguous.
+// Go intentionally treats "contract" as an import path, while CLI users commonly
+// mean ./contract or the package in their current directory.
+func localPattern(pattern string) string {
+	if pattern == "" || pattern == "." || strings.ContainsAny(pattern, "/\\") {
+		return pattern
+	}
+	if info, err := os.Stat(pattern); err == nil && info.IsDir() {
+		return "." + string(filepath.Separator) + pattern
+	}
+	cmd := exec.Command("go", "list", "-f", "{{.Name}}", ".")
+	name, err := cmd.Output()
+	if err == nil && strings.TrimSpace(string(name)) == pattern {
+		return "."
+	}
+	return pattern
 }

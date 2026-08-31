@@ -32,6 +32,10 @@ func Package(w io.Writer, p model.Package) {
 	}
 }
 func Workflows(w io.Writer, xs []model.Workflow) {
+	if len(xs) == 0 {
+		fmt.Fprintln(w, "No documented workflows.")
+		return
+	}
 	for i, x := range xs {
 		if i > 0 {
 			fmt.Fprintln(w)
@@ -47,6 +51,10 @@ func Workflow(w io.Writer, x model.Workflow) {
 	list(w, "Related contracts", x.RelatedContracts)
 }
 func Contracts(w io.Writer, xs []model.Contract) {
+	if len(xs) == 0 {
+		fmt.Fprintln(w, "No documented contracts.")
+		return
+	}
 	for i, x := range xs {
 		if i > 0 {
 			fmt.Fprintln(w)
@@ -65,6 +73,10 @@ func Symbol(w io.Writer, x model.Symbol) {
 	list(w, "Related contracts", x.RelatedContracts)
 }
 func Matches(w io.Writer, xs []query.Match) {
+	if len(xs) == 0 {
+		fmt.Fprintln(w, "No matching documentation.")
+		return
+	}
 	for i, x := range xs {
 		if i > 0 {
 			fmt.Fprintln(w)
