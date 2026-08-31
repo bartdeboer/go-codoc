@@ -42,3 +42,14 @@ func TestPackageMakesAPICapExplicit(t *testing.T) {
 		t.Fatalf("optional workflows reported as gap: %q", out.String())
 	}
 }
+
+func TestNarrativeRendersContextAwareDrillDown(t *testing.T) {
+	var out bytes.Buffer
+	Narrative(&out, model.Narrative{Name: "contract", Passed: true, CommandDirectory: "./contract", DocumentedTests: []model.DocumentedTest{{Title: "Story", Status: "pass", RelatedSymbols: []model.RelatedSymbol{{Symbol: "CommandSurface"}, {Symbol: "CommandDefinition"}}}}})
+	got := out.String()
+	for _, want := range []string{"Drill down:", "go tool codoc -C ./contract symbol CommandSurface", "go tool codoc -C ./contract symbol CommandDefinition", "PASS"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}

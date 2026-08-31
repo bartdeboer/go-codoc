@@ -43,6 +43,12 @@ func (a App) Load(ctx context.Context, workDir, pattern string) (*load.Package, 
 }
 func (a App) Narrative(ctx context.Context, source *load.Package, doc model.Package, options Options) error {
 	narrative := model.Narrative{Kind: "narrative", ImportPath: doc.ImportPath, Name: doc.Name, Overview: doc.Overview, DocumentedTests: nonNil(doc.DocumentedTests), Passed: true}
+	if source != nil {
+		narrative.CommandDirectory, narrative.CommandPackage = source.WorkDir, source.Pattern
+	}
+	for i := range narrative.DocumentedTests {
+		narrative.DocumentedTests[i].RelatedSymbols = nonNil(narrative.DocumentedTests[i].RelatedSymbols)
+	}
 	if len(narrative.DocumentedTests) > 0 {
 		testNames := make([]string, len(narrative.DocumentedTests))
 		for i, test := range narrative.DocumentedTests {

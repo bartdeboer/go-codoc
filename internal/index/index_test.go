@@ -28,6 +28,9 @@ func TestBuildExtractsAddressableRecords(t *testing.T) {
 	if documented.ID != "thread-retrieval" || documented.Title != "Thread Retrieval" || !strings.Contains(documented.Code, "GetThread") {
 		t.Fatalf("documented test = %#v", documented)
 	}
+	if got := documented.RelatedSymbols; len(got) != 2 || got[0].Symbol != "Client.GetThread" || got[1].Symbol != "Client" {
+		t.Fatalf("related symbols=%#v", got)
+	}
 	omitted := doc.DocumentedTests[1]
 	if !omitted.CodeOmitted || omitted.Code != "" {
 		t.Fatalf("omitted test = %#v", omitted)
@@ -149,5 +152,35 @@ func TestBuildAcceptsTestingImportAliasAndDotImport(t *testing.T) {
 	}
 	if doc.DocumentedTests[0].TestName != "TestAlias" || doc.DocumentedTests[1].TestName != "TestDot" {
 		t.Fatalf("documented tests=%#v", doc.DocumentedTests)
+	}
+}
+
+func TestBuildResolvesCurrentPackageDocLinksFromExternalTests(t *testing.T) {
+	pkg, err := load.PackageAt("./testdata/doclinks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := index.Build(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.DocumentedTests) != 2 {
+		t.Fatalf("documented tests=%#v", doc.DocumentedTests)
+	}
+	story := doc.DocumentedTests[0]
+	if len(story.RelatedSymbols) != 2 {
+		t.Fatalf("related symbols=%#v", story.RelatedSymbols)
+	}
+	if story.RelatedSymbols[0].Symbol != "Surface" || story.RelatedSymbols[1].Symbol != "Client.Do" {
+		t.Fatalf("related symbols=%#v", story.RelatedSymbols)
+	}
+	for _, related := range story.RelatedSymbols {
+		if related.Package != pkg.ImportPath || related.Source.File == "" {
+			t.Fatalf("related symbol=%#v", related)
+		}
+	}
+	omitted := doc.DocumentedTests[1]
+	if !omitted.CodeOmitted || len(omitted.RelatedSymbols) != 1 || omitted.RelatedSymbols[0].Symbol != "Client.Do" {
+		t.Fatalf("omitted=%#v", omitted)
 	}
 }

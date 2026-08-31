@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"github.com/bartdeboer/go-codoc/internal/model"
 	"github.com/bartdeboer/go-codoc/internal/query"
@@ -162,6 +163,25 @@ func firstSentence(s string) string {
 	return s
 }
 
+func drillCommand(narrative model.Narrative) string {
+	parts := []string{"go", "tool", "codoc"}
+	if narrative.CommandDirectory != "" {
+		parts = append(parts, "-C", shellWord(narrative.CommandDirectory))
+	}
+	if narrative.CommandPackage != "" && narrative.CommandPackage != "." {
+		parts = append(parts, "--package", shellWord(narrative.CommandPackage))
+	}
+	return strings.Join(parts, " ")
+}
+func shellWord(value string) string {
+	if value != "" && strings.IndexFunc(value, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("./_-", r)
+	}) < 0 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 // Narrative renders the executable architectural story used by bare codoc.
 func Narrative(w io.Writer, narrative model.Narrative) {
 	fmt.Fprintf(w, "Package %s\n", narrative.Name)
@@ -183,6 +203,12 @@ func Narrative(w io.Writer, narrative model.Narrative) {
 		} else {
 			fmt.Fprintln(w, "\nTest:")
 			indent(w, path.Code)
+		}
+		if len(path.RelatedSymbols) > 0 {
+			fmt.Fprintln(w, "\nDrill down:")
+			for _, related := range path.RelatedSymbols {
+				fmt.Fprintf(w, "    %s symbol %s\n", drillCommand(narrative), related.Symbol)
+			}
 		}
 		fmt.Fprintf(w, "\nSource: %s\n%s\n", source(path.Source), strings.ToUpper(path.Status))
 		if path.Status != "pass" && path.Output != "" {

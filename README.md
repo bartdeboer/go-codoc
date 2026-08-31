@@ -20,6 +20,10 @@ func TestTrustedDeviceElevation(t *testing.T) { /* ... */ }
 Use `//codoc:code omit` in the same comment to run a documented test without
 rendering its body.
 
+Standard Go documentation links to symbols in the documented package, such as
+`[Client.GetThread]`, become copyable drill-down commands in the narrative.
+Unresolved and external-package links remain prose.
+
 ```sh
 codoc
 codoc package

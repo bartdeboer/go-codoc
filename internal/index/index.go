@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/doc"
+	"go/doc/comment"
 	"go/printer"
 	"go/token"
 	"path/filepath"
@@ -86,7 +87,7 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 			if !isGoTest(file, d) {
 				return fmt.Errorf("%s is marked codoc:doc but is not a valid Go test", d.Name.Name)
 			}
-			path := documentedTest(pkg, d, omitCode)
+			path := documentedTest(pkg, file, d, omitCode, out.Symbols)
 			if path.Summary == "" {
 				return fmt.Errorf("documented test %s requires a prose comment", d.Name.Name)
 			}
@@ -200,13 +201,106 @@ func testingImports(file *ast.File) (map[string]bool, bool) {
 	return qualifiers, dotImport
 }
 
-func documentedTest(pkg *load.Package, d *ast.FuncDecl, omitCode bool) model.DocumentedTest {
+func documentedTest(pkg *load.Package, file *ast.File, d *ast.FuncDecl, omitCode bool, symbols []model.Symbol) model.DocumentedTest {
 	name := strings.TrimPrefix(d.Name.Name, "Test")
 	code := ""
 	if !omitCode {
 		code = nodeText(pkg, d.Body)
 	}
-	return model.DocumentedTest{Kind: "documented_test", ID: kebab(name), Title: title(name), Summary: docText(d.Doc), TestName: d.Name.Name, Code: code, CodeOmitted: omitCode, Source: position(pkg, d.Pos()), Status: "not run"}
+	return model.DocumentedTest{Kind: "documented_test", ID: kebab(name), Title: title(name), Summary: docText(d.Doc), TestName: d.Name.Name, Code: code, CodeOmitted: omitCode, Source: position(pkg, d.Pos()), Status: "not run", RelatedSymbols: relatedDocSymbols(pkg, file, d.Doc, symbols)}
+}
+
+func relatedDocSymbols(pkg *load.Package, file *ast.File, group *ast.CommentGroup, symbols []model.Symbol) []model.RelatedSymbol {
+	if group == nil {
+		return []model.RelatedSymbol{}
+	}
+	available := make(map[string]model.Symbol, len(symbols))
+	for _, symbol := range symbols {
+		available[symbol.ID] = symbol
+	}
+	aliases := currentPackageAliases(pkg, file)
+	parser := comment.Parser{
+		LookupPackage: func(name string) (string, bool) {
+			if aliases[name] {
+				return pkg.ImportPath, true
+			}
+			return "", false
+		},
+		LookupSym: func(recv, name string) bool {
+			if file.Name.Name != pkg.Name {
+				return false
+			}
+			id := name
+			if recv != "" {
+				id = recv + "." + name
+			}
+			_, ok := available[id]
+			return ok
+		},
+	}
+	parsed := parser.Parse(group.Text())
+	var links []*comment.DocLink
+	walkCommentBlocks(parsed.Content, func(link *comment.DocLink) { links = append(links, link) })
+	result := []model.RelatedSymbol{}
+	seen := map[string]bool{}
+	for _, link := range links {
+		if link.Name == "" || link.ImportPath != "" && link.ImportPath != pkg.ImportPath {
+			continue
+		}
+		id := link.Name
+		if link.Recv != "" {
+			id = link.Recv + "." + link.Name
+		}
+		symbol, ok := available[id]
+		if !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		result = append(result, model.RelatedSymbol{Package: pkg.ImportPath, Symbol: id, Source: symbol.Source})
+	}
+	return result
+}
+
+func currentPackageAliases(pkg *load.Package, file *ast.File) map[string]bool {
+	aliases := map[string]bool{}
+	if file.Name.Name == pkg.Name {
+		aliases[pkg.Name] = true
+	}
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, "\"") != pkg.ImportPath {
+			continue
+		}
+		if spec.Name == nil {
+			aliases[pkg.Name] = true
+			continue
+		}
+		if spec.Name.Name != "_" && spec.Name.Name != "." {
+			aliases[spec.Name.Name] = true
+		}
+	}
+	return aliases
+}
+
+func walkCommentBlocks(blocks []comment.Block, visit func(*comment.DocLink)) {
+	for _, block := range blocks {
+		switch value := block.(type) {
+		case *comment.Paragraph:
+			walkCommentText(value.Text, visit)
+		case *comment.Heading:
+			walkCommentText(value.Text, visit)
+		case *comment.List:
+			for _, item := range value.Items {
+				walkCommentBlocks(item.Content, visit)
+			}
+		}
+	}
+}
+func walkCommentText(text []comment.Text, visit func(*comment.DocLink)) {
+	for _, item := range text {
+		if link, ok := item.(*comment.DocLink); ok {
+			visit(link)
+		}
+	}
 }
 
 func title(name string) string {

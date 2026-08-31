@@ -21,26 +21,35 @@ type Package struct {
 }
 
 type DocumentedTest struct {
-	Kind        string   `json:"kind"`
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary,omitempty"`
-	TestName    string   `json:"test_name"`
-	Code        string   `json:"code,omitempty"`
-	CodeOmitted bool     `json:"code_omitted,omitempty"`
-	Source      Position `json:"source"`
-	Status      string   `json:"status"`
-	Output      string   `json:"output,omitempty"`
+	Kind           string          `json:"kind"`
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	Summary        string          `json:"summary,omitempty"`
+	TestName       string          `json:"test_name"`
+	Code           string          `json:"code,omitempty"`
+	CodeOmitted    bool            `json:"code_omitted,omitempty"`
+	Source         Position        `json:"source"`
+	Status         string          `json:"status"`
+	Output         string          `json:"output,omitempty"`
+	RelatedSymbols []RelatedSymbol `json:"related_symbols"`
+}
+
+type RelatedSymbol struct {
+	Package string   `json:"package"`
+	Symbol  string   `json:"symbol"`
+	Source  Position `json:"source"`
 }
 
 type Narrative struct {
-	Kind            string           `json:"kind"`
-	ImportPath      string           `json:"import_path"`
-	Name            string           `json:"name"`
-	Overview        string           `json:"overview"`
-	DocumentedTests []DocumentedTest `json:"documented_tests"`
-	Passed          bool             `json:"passed"`
-	Output          string           `json:"output,omitempty"`
+	Kind             string           `json:"kind"`
+	ImportPath       string           `json:"import_path"`
+	Name             string           `json:"name"`
+	Overview         string           `json:"overview"`
+	DocumentedTests  []DocumentedTest `json:"documented_tests"`
+	Passed           bool             `json:"passed"`
+	Output           string           `json:"output,omitempty"`
+	CommandDirectory string           `json:"-"`
+	CommandPackage   string           `json:"-"`
 }
 
 type Workflow struct {

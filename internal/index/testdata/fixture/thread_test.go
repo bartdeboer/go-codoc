@@ -34,7 +34,8 @@ func ExampleSystem_trustedDeviceElevation() {
 // ExampleSystem_illustrative has no expected output and is not a workflow.
 func ExampleSystem_illustrative() { fmt.Println("not executed by go test") }
 
-// TestThreadRetrieval demonstrates the package's core retrieval path.
+// TestThreadRetrieval demonstrates [Client.GetThread] on [fixture.Client].
+// [Client.GetThread] is repeated intentionally.
 //
 //codoc:doc
 func TestThreadRetrieval(t *testing.T) {
