@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 func buildRouter(a app.App, g globalOptions) *clir.Router {
 	r := clir.New()
 	r.Routes(func(b *clir.Builder) {
-		b.Describe("", "Inspect the current Go package. Global options: --json, --format text|json, -C <dir>, --package <pattern>.")
+		b.Describe("", "Bare codoc runs documented TestGolden core paths; retrieval commands do not run tests. Global options: --json, --format text|json, -C <dir>, --package <pattern>.")
 		commands := clir.WithContext(b, func(req *clir.Request) (commandContext, error) {
 			source, doc, err := a.Load(req.Context(), g.workDir, g.pattern)
 			return commandContext{source, doc, app.Options{Format: g.format}}, err

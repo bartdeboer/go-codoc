@@ -111,3 +111,22 @@ func contains(items []string, want string) bool {
 	}
 	return false
 }
+
+func TestBuildRejectsCommentlessGoldenTest(t *testing.T) {
+	pkg, err := load.PackageAt("./testdata/commentless")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "requires a documentation comment") {
+		t.Fatalf("error=%v", err)
+	}
+}
+func TestBuildRejectsDuplicateGoldenIDs(t *testing.T) {
+	pkg, err := load.PackageAt("./testdata/duplicate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.Build(pkg); err == nil || !strings.Contains(err.Error(), "duplicate golden path ID") {
+		t.Fatalf("error=%v", err)
+	}
+}

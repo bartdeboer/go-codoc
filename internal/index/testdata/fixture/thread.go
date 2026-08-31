@@ -31,3 +31,5 @@ type System interface {
 type storySystem struct{}
 
 func (*storySystem) TrustBrowser() {}
+
+func TestGoldenProductionHelper() {}

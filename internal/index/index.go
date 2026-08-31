@@ -38,6 +38,9 @@ func Build(pkg *load.Package) (model.Package, error) {
 	if err := validateContracts(out.Contracts); err != nil {
 		return model.Package{}, err
 	}
+	if err := validateGoldenPaths(out.GoldenPaths); err != nil {
+		return model.Package{}, err
+	}
 	link(&out)
 	sortRecords(&out)
 	out.Gaps = documentationGaps(out)
@@ -73,8 +76,12 @@ func examples(pkg *load.Package) []model.Workflow {
 
 func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Package) error {
 	d, ok := decl.(*ast.FuncDecl)
-	if ok && strings.HasPrefix(d.Name.Name, "TestGolden") {
-		out.GoldenPaths = append(out.GoldenPaths, goldenPath(pkg, d))
+	if ok && isGoldenTest(pkg, d) {
+		path := goldenPath(pkg, d)
+		if path.Summary == "" {
+			return fmt.Errorf("golden test %s requires a documentation comment", d.Name.Name)
+		}
+		out.GoldenPaths = append(out.GoldenPaths, path)
 		return nil
 	}
 	if ok && strings.HasPrefix(d.Name.Name, "Test") {
@@ -101,6 +108,32 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 		}
 	}
 	return nil
+}
+
+func isGoldenTest(pkg *load.Package, d *ast.FuncDecl) bool {
+	if !strings.HasSuffix(pkg.FSet.Position(d.Pos()).Filename, "_test.go") || d.Recv != nil {
+		return false
+	}
+	if !strings.HasPrefix(d.Name.Name, "TestGolden") || d.Name.Name == "TestGolden" {
+		return false
+	}
+	if d.Type.TypeParams != nil || d.Type.Results != nil || d.Type.Params == nil || len(d.Type.Params.List) != 1 {
+		return false
+	}
+	parameter := d.Type.Params.List[0]
+	if len(parameter.Names) != 1 {
+		return false
+	}
+	pointer, ok := parameter.Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	selector, ok := pointer.X.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "T" {
+		return false
+	}
+	packageName, ok := selector.X.(*ast.Ident)
+	return ok && packageName.Name == "testing"
 }
 
 func goldenPath(pkg *load.Package, d *ast.FuncDecl) model.GoldenPath {
@@ -223,6 +256,20 @@ func sortRecords(p *model.Package) {
 	sort.Slice(p.Contracts, func(i, j int) bool { return p.Contracts[i].ID < p.Contracts[j].ID })
 	sort.Slice(p.Symbols, func(i, j int) bool { return p.Symbols[i].ID < p.Symbols[j].ID })
 }
+func validateGoldenPaths(paths []model.GoldenPath) error {
+	ids, names := map[string]bool{}, map[string]bool{}
+	for _, path := range paths {
+		if ids[path.ID] {
+			return fmt.Errorf("duplicate golden path ID %q", path.ID)
+		}
+		if names[path.TestName] {
+			return fmt.Errorf("duplicate golden test %q", path.TestName)
+		}
+		ids[path.ID], names[path.TestName] = true, true
+	}
+	return nil
+}
+
 func validateContracts(xs []model.Contract) error {
 	seen := map[string]bool{}
 	for _, x := range xs {
@@ -287,7 +334,11 @@ func kebab(s string) string {
 		}
 		b.WriteRune(unicode.ToLower(r))
 	}
-	return strings.Trim(b.String(), "-")
+	id := strings.Trim(b.String(), "-")
+	for strings.Contains(id, "--") {
+		id = strings.ReplaceAll(id, "--", "-")
+	}
+	return id
 }
 func clean(s string) string { return strings.TrimSpace(s) }
 func docText(d *ast.CommentGroup) string {

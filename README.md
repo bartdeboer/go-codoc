@@ -38,7 +38,7 @@ codoc verify workflow get-thread
 codoc verify contract get-thread/not-found
 ```
 
-Ordinary reading never runs tests and reports records as `not run`.
+Explicit record retrieval (`codoc package`, `workflow`, `contract`, `symbol`, and `search`) never runs tests and reports executable records as `not run`.
 
 ## Documentation sources
 
