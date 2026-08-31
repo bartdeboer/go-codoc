@@ -77,3 +77,14 @@ func (p Package) OrientationSymbols(limit int) []Symbol {
 	}
 	return items
 }
+
+// OrientationSymbolCount reports the number of top-level public API entries.
+func (p Package) OrientationSymbolCount() int {
+	count := 0
+	for _, symbol := range p.Symbols {
+		if !strings.Contains(symbol.ID, ".") {
+			count++
+		}
+	}
+	return count
+}

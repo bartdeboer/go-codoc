@@ -47,6 +47,9 @@ func Build(pkg *load.Package) (model.Package, error) {
 func examples(pkg *load.Package) []model.Workflow {
 	var out []model.Workflow
 	for _, ex := range doc.Examples(pkg.Files...) {
+		if ex.Output == "" && !ex.EmptyOutput {
+			continue
+		}
 		base, suffix := ex.Name, ex.Suffix
 		if suffix == "" {
 			if i := strings.LastIndexByte(base, '_'); i >= 0 && i+1 < len(base) && unicode.IsLower(rune(base[i+1])) {
@@ -63,7 +66,7 @@ func examples(pkg *load.Package) []model.Workflow {
 		}
 		name := "Example" + ex.Name
 		pos := findFunction(pkg, name)
-		out = append(out, model.Workflow{Kind: "workflow", ID: kebab(idSource), Summary: clean(ex.Doc), ExampleName: name, PrimarySymbol: primary, Code: nodeText(pkg, ex.Code), ExpectedOutput: ex.Output, EmptyOutput: ex.EmptyOutput, RelatedSymbols: referencedNames(ex.Code), RelatedContracts: []string{}, Verification: "not run", Source: pos})
+		out = append(out, model.Workflow{Kind: "workflow", ID: kebab(idSource), Summary: clean(ex.Doc), ExampleName: name, PrimarySymbol: primary, Code: nodeText(pkg, ex.Code), ExpectedOutput: ex.Output, EmptyOutput: ex.EmptyOutput, RelatedSymbols: []string{}, RelatedContracts: []string{}, Verification: "not run", Source: pos})
 	}
 	return out
 }
@@ -123,7 +126,7 @@ func parseContract(pkg *load.Package, d *ast.FuncDecl) (model.Contract, bool, er
 	if len(summary) == 0 {
 		return model.Contract{}, false, fmt.Errorf("contract %q has no summary", id)
 	}
-	return model.Contract{Kind: "contract", ID: id, Summary: strings.Join(summary, "\n"), TestName: d.Name.Name, RelatedSymbols: referencedNames(d.Body), Verification: "not run", Source: position(pkg, d.Pos())}, true, nil
+	return model.Contract{Kind: "contract", ID: id, Summary: strings.Join(summary, "\n"), TestName: d.Name.Name, RelatedSymbols: []string{}, Verification: "not run", Source: position(pkg, d.Pos())}, true, nil
 }
 
 func funcSymbol(pkg *load.Package, d *ast.FuncDecl) model.Symbol {
@@ -157,56 +160,30 @@ func link(pkg *model.Package) {
 		symbols[pkg.Symbols[i].ID] = &pkg.Symbols[i]
 	}
 	for i := range pkg.Workflows {
-		w := &pkg.Workflows[i]
-		var linked []string
-		if s := symbols[w.PrimarySymbol]; s != nil {
-			linked = append(linked, s.ID)
+		workflow := &pkg.Workflows[i]
+		primary := symbols[workflow.PrimarySymbol]
+		if primary == nil {
+			workflow.RelatedSymbols = []string{}
+			continue
 		}
-		for _, name := range w.RelatedSymbols {
-			for id, s := range symbols {
-				if id == name || last(id) == name {
-					linked = appendUnique(linked, s.ID)
-				}
-			}
-		}
-		w.RelatedSymbols = sorted(linked)
-		for _, id := range w.RelatedSymbols {
-			symbols[id].RelatedWorkflows = appendUnique(symbols[id].RelatedWorkflows, w.ID)
-		}
-	}
-	for i := range pkg.Contracts {
-		c := &pkg.Contracts[i]
-		var linked []string
-		for _, name := range c.RelatedSymbols {
-			for id := range symbols {
-				if id == name || last(id) == name {
-					linked = appendUnique(linked, id)
-				}
-			}
-		}
-		c.RelatedSymbols = sorted(linked)
-		for _, id := range c.RelatedSymbols {
-			symbols[id].RelatedContracts = appendUnique(symbols[id].RelatedContracts, c.ID)
-		}
-	}
-	for i := range pkg.Workflows {
-		for _, c := range pkg.Contracts {
-			if overlaps(pkg.Workflows[i].RelatedSymbols, c.RelatedSymbols) {
-				pkg.Workflows[i].RelatedContracts = append(pkg.Workflows[i].RelatedContracts, c.ID)
-			}
-		}
+		workflow.RelatedSymbols = []string{primary.ID}
+		primary.RelatedWorkflows = appendUnique(primary.RelatedWorkflows, workflow.ID)
 	}
 }
+
 func documentationGaps(p model.Package) []string {
 	var gaps []string
 	if p.Overview == "" {
 		gaps = append(gaps, "package overview missing")
 	}
-	if len(p.Workflows) == 0 {
-		gaps = append(gaps, "no workflows")
+	undocumented := 0
+	for _, symbol := range p.OrientationSymbols(len(p.Symbols)) {
+		if symbol.Doc == "" {
+			undocumented++
+		}
 	}
-	if len(p.Contracts) == 0 {
-		gaps = append(gaps, "no documented contracts")
+	if undocumented > 0 {
+		gaps = append(gaps, fmt.Sprintf("%d public entry points undocumented", undocumented))
 	}
 	return gaps
 }
@@ -234,23 +211,6 @@ func findFunction(pkg *load.Package, name string) model.Position {
 		}
 	}
 	return model.Position{}
-}
-func referencedNames(n ast.Node) []string {
-	var out []string
-	ast.Inspect(n, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.SelectorExpr:
-			if x.Sel.IsExported() {
-				out = appendUnique(out, x.Sel.Name)
-			}
-		case *ast.Ident:
-			if x.IsExported() {
-				out = appendUnique(out, x.Name)
-			}
-		}
-		return true
-	})
-	return out
 }
 func funcSignature(pkg *load.Package, d *ast.FuncDecl) string {
 	copy := *d
@@ -325,20 +285,4 @@ func sorted(xs []string) []string {
 		return []string{}
 	}
 	return xs
-}
-func last(s string) string {
-	if i := strings.LastIndex(s, "."); i >= 0 {
-		return s[i+1:]
-	}
-	return s
-}
-func overlaps(a, b []string) bool {
-	for _, x := range a {
-		for _, y := range b {
-			if x == y {
-				return true
-			}
-		}
-	}
-	return false
 }

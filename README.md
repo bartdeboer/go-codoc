@@ -39,7 +39,7 @@ Ordinary reading never runs tests and reports records as `not run`.
 ## Documentation sources
 
 - Package comments provide orientation.
-- Go `Example...` functions provide executable workflows and expected output.
+- Go `Example...` functions with `// Output:` provide executable workflows and expected output. Output-less examples are illustrative Go documentation, not codoc workflows.
 - Public declarations and Go doc comments provide the API.
 - `//codoc:contract <stable-id>` marks only a small set of deliberately
   documented behavioral promises. Ordinary implementation tests should remain

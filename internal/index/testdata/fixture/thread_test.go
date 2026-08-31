@@ -30,3 +30,6 @@ func ExampleSystem_trustedDeviceElevation() {
 	fmt.Println("trusted")
 	// Output: trusted
 }
+
+// ExampleSystem_illustrative has no golden output and is not a workflow.
+func ExampleSystem_illustrative() { fmt.Println("not executed by go test") }

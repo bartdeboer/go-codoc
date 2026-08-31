@@ -54,8 +54,11 @@ func TestBuildExtractsAddressableRecords(t *testing.T) {
 	if strings.HasPrefix(method.Source.File, "/") {
 		t.Fatalf("source path is absolute: %q", method.Source.File)
 	}
-	if got := doc.Workflows[0].RelatedContracts; len(got) != 1 || got[0] != "get-thread/not-found" {
-		t.Fatalf("related contracts = %v", got)
+	if got := doc.Workflows[0].RelatedSymbols; len(got) != 1 || got[0] != "Client.GetThread" {
+		t.Fatalf("related symbols = %v", got)
+	}
+	if workflowByID(doc, "illustrative") != nil {
+		t.Fatal("output-less example was classified as executable workflow")
 	}
 }
 

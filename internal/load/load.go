@@ -42,7 +42,7 @@ func PackageAtContext(ctx context.Context, workDir, pattern string) (*Package, e
 	if pattern == "" {
 		pattern = "."
 	}
-	pattern = localPattern(workDir, pattern)
+	pattern = localPattern(ctx, workDir, pattern)
 	cmd := exec.CommandContext(ctx, "go", "list", "-json", pattern)
 	cmd.Dir = workDir
 	var stdout, stderr bytes.Buffer
@@ -75,7 +75,7 @@ func PackageAtContext(ctx context.Context, workDir, pattern string) (*Package, e
 	return pkg, nil
 }
 
-func localPattern(workDir, pattern string) string {
+func localPattern(ctx context.Context, workDir, pattern string) string {
 	if pattern == "" || pattern == "." || strings.ContainsAny(pattern, "/\\") {
 		return pattern
 	}
@@ -86,7 +86,7 @@ func localPattern(workDir, pattern string) string {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return "." + string(filepath.Separator) + pattern
 	}
-	cmd := exec.Command("go", "list", "-f", "{{.Name}}", ".")
+	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", ".")
 	cmd.Dir = workDir
 	name, err := cmd.Output()
 	if err == nil && strings.TrimSpace(string(name)) == pattern {

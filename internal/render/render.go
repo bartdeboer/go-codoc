@@ -22,7 +22,7 @@ func Package(w io.Writer, p model.Package) {
 		fmt.Fprintf(w, "\n%s\n", p.Overview)
 	}
 	if symbols := p.OrientationSymbols(12); len(symbols) > 0 {
-		fmt.Fprintln(w, "\nAPI:")
+		fmt.Fprintf(w, "\nAPI (showing %d of %d, alphabetical):\n", len(symbols), p.OrientationSymbolCount())
 		for _, kind := range []string{"type", "func", "const", "var"} {
 			for _, symbol := range symbols {
 				if symbol.DeclarationKind != kind {
