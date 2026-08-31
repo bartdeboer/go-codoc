@@ -83,7 +83,7 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 			return fmt.Errorf("%s: %w", position(pkg, d.Pos()).File, err)
 		}
 		if annotated {
-			if !isGoTest(d) {
+			if !isGoTest(file, d) {
 				return fmt.Errorf("%s is marked codoc:doc but is not a valid Go test", d.Name.Name)
 			}
 			path := documentedTest(pkg, d, omitCode)
@@ -147,7 +147,7 @@ func documentedDirectives(doc *ast.CommentGroup) (annotated, omitCode bool, err 
 	return annotated, omitCode, nil
 }
 
-func isGoTest(d *ast.FuncDecl) bool {
+func isGoTest(file *ast.File, d *ast.FuncDecl) bool {
 	if d.Recv != nil || !strings.HasPrefix(d.Name.Name, "Test") || len(d.Name.Name) == len("Test") {
 		return false
 	}
@@ -166,12 +166,38 @@ func isGoTest(d *ast.FuncDecl) bool {
 	if !ok {
 		return false
 	}
+	qualifiers, dotImport := testingImports(file)
+	if identifier, ok := pointer.X.(*ast.Ident); ok {
+		return dotImport && identifier.Name == "T"
+	}
 	selector, ok := pointer.X.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != "T" {
 		return false
 	}
-	packageName, ok := selector.X.(*ast.Ident)
-	return ok && packageName.Name == "testing"
+	qualifier, ok := selector.X.(*ast.Ident)
+	return ok && qualifiers[qualifier.Name]
+}
+
+func testingImports(file *ast.File) (map[string]bool, bool) {
+	qualifiers := map[string]bool{}
+	dotImport := false
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, "\"") != "testing" {
+			continue
+		}
+		if spec.Name == nil {
+			qualifiers["testing"] = true
+			continue
+		}
+		switch spec.Name.Name {
+		case ".":
+			dotImport = true
+		case "_":
+		default:
+			qualifiers[spec.Name.Name] = true
+		}
+	}
+	return qualifiers, dotImport
 }
 
 func documentedTest(pkg *load.Package, d *ast.FuncDecl, omitCode bool) model.DocumentedTest {

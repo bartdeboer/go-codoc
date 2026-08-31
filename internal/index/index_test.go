@@ -134,3 +134,20 @@ func TestBuildRejectsDuplicateDocumentedIDs(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestBuildAcceptsTestingImportAliasAndDotImport(t *testing.T) {
+	pkg, err := load.PackageAt("./testdata/testingimports")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := index.Build(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.DocumentedTests) != 2 {
+		t.Fatalf("documented tests=%#v", doc.DocumentedTests)
+	}
+	if doc.DocumentedTests[0].TestName != "TestAlias" || doc.DocumentedTests[1].TestName != "TestDot" {
+		t.Fatalf("documented tests=%#v", doc.DocumentedTests)
+	}
+}
