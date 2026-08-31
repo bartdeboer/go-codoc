@@ -33,3 +33,14 @@ func ExampleSystem_trustedDeviceElevation() {
 
 // ExampleSystem_illustrative has no golden output and is not a workflow.
 func ExampleSystem_illustrative() { fmt.Println("not executed by go test") }
+
+// TestGoldenThreadRetrieval demonstrates the package's core retrieval path.
+func TestGoldenThreadRetrieval(t *testing.T) {
+	thread, err := new(Client).GetThread(context.Background(), "thread-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if thread.ID != "thread-123" {
+		t.Fatalf("ID = %q", thread.ID)
+	}
+}

@@ -9,14 +9,37 @@ type Position struct {
 }
 
 type Package struct {
-	Kind       string     `json:"kind"`
-	ImportPath string     `json:"import_path"`
-	Name       string     `json:"name"`
-	Overview   string     `json:"overview"`
-	Workflows  []Workflow `json:"workflows"`
-	Contracts  []Contract `json:"contracts"`
-	Symbols    []Symbol   `json:"symbols"`
-	Gaps       []string   `json:"gaps"`
+	Kind        string       `json:"kind"`
+	ImportPath  string       `json:"import_path"`
+	Name        string       `json:"name"`
+	Overview    string       `json:"overview"`
+	Workflows   []Workflow   `json:"workflows"`
+	Contracts   []Contract   `json:"contracts"`
+	Symbols     []Symbol     `json:"symbols"`
+	GoldenPaths []GoldenPath `json:"golden_paths"`
+	Gaps        []string     `json:"gaps"`
+}
+
+type GoldenPath struct {
+	Kind     string   `json:"kind"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary,omitempty"`
+	TestName string   `json:"test_name"`
+	Code     string   `json:"code"`
+	Source   Position `json:"source"`
+	Status   string   `json:"status"`
+	Output   string   `json:"output,omitempty"`
+}
+
+type Narrative struct {
+	Kind        string       `json:"kind"`
+	ImportPath  string       `json:"import_path"`
+	Name        string       `json:"name"`
+	Overview    string       `json:"overview"`
+	GoldenPaths []GoldenPath `json:"golden_paths"`
+	Passed      bool         `json:"passed"`
+	Output      string       `json:"output,omitempty"`
 }
 
 type Workflow struct {

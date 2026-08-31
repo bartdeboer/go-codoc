@@ -21,7 +21,7 @@ import (
 var contractID = regexp.MustCompile(`^[a-z0-9]+(?:[/-][a-z0-9]+)*$`)
 
 func Build(pkg *load.Package) (model.Package, error) {
-	out := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name, Workflows: []model.Workflow{}, Contracts: []model.Contract{}, Symbols: []model.Symbol{}, Gaps: []string{}}
+	out := model.Package{Kind: "package", ImportPath: pkg.ImportPath, Name: pkg.Name, Workflows: []model.Workflow{}, Contracts: []model.Contract{}, Symbols: []model.Symbol{}, GoldenPaths: []model.GoldenPath{}, Gaps: []string{}}
 	for _, file := range pkg.Files {
 		if file.Name.Name == pkg.Name && out.Overview == "" && file.Doc != nil {
 			out.Overview = clean(file.Doc.Text())
@@ -73,6 +73,10 @@ func examples(pkg *load.Package) []model.Workflow {
 
 func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Package) error {
 	d, ok := decl.(*ast.FuncDecl)
+	if ok && strings.HasPrefix(d.Name.Name, "TestGolden") {
+		out.GoldenPaths = append(out.GoldenPaths, goldenPath(pkg, d))
+		return nil
+	}
 	if ok && strings.HasPrefix(d.Name.Name, "Test") {
 		c, found, err := parseContract(pkg, d)
 		if err != nil {
@@ -97,6 +101,30 @@ func inspectDecl(pkg *load.Package, file *ast.File, decl ast.Decl, out *model.Pa
 		}
 	}
 	return nil
+}
+
+func goldenPath(pkg *load.Package, d *ast.FuncDecl) model.GoldenPath {
+	name := strings.TrimPrefix(d.Name.Name, "TestGolden")
+	return model.GoldenPath{
+		Kind: "golden_path", ID: kebab(name), Title: title(name),
+		Summary: docText(d.Doc), TestName: d.Name.Name, Code: nodeText(pkg, d.Body),
+		Source: position(pkg, d.Pos()), Status: "not run",
+	}
+}
+
+func title(name string) string {
+	var words []string
+	start := 0
+	for i, r := range name {
+		if i > 0 && unicode.IsUpper(r) {
+			words = append(words, name[start:i])
+			start = i
+		}
+	}
+	if start < len(name) {
+		words = append(words, name[start:])
+	}
+	return strings.Join(words, " ")
 }
 
 func parseContract(pkg *load.Package, d *ast.FuncDecl) (model.Contract, bool, error) {
@@ -188,6 +216,9 @@ func documentationGaps(p model.Package) []string {
 	return gaps
 }
 func sortRecords(p *model.Package) {
+	sort.Slice(p.GoldenPaths, func(i, j int) bool {
+		return p.GoldenPaths[i].Source.File < p.GoldenPaths[j].Source.File || (p.GoldenPaths[i].Source.File == p.GoldenPaths[j].Source.File && p.GoldenPaths[i].Source.Line < p.GoldenPaths[j].Source.Line)
+	})
 	sort.Slice(p.Workflows, func(i, j int) bool { return p.Workflows[i].ID < p.Workflows[j].ID })
 	sort.Slice(p.Contracts, func(i, j int) bool { return p.Contracts[i].ID < p.Contracts[j].ID })
 	sort.Slice(p.Symbols, func(i, j int) bool { return p.Symbols[i].ID < p.Symbols[j].ID })

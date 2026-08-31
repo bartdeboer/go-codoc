@@ -41,6 +41,38 @@ func (a App) Load(ctx context.Context, workDir, pattern string) (*load.Package, 
 	doc, err := index.Build(source)
 	return source, doc, err
 }
+func (a App) Narrative(ctx context.Context, source *load.Package, doc model.Package, options Options) error {
+	narrative := model.Narrative{Kind: "narrative", ImportPath: doc.ImportPath, Name: doc.Name, Overview: doc.Overview, GoldenPaths: nonNil(doc.GoldenPaths), Passed: true}
+	if len(narrative.GoldenPaths) > 0 {
+		result := verify.RunGolden(ctx, source)
+		narrative.Passed = result.Passed
+		narrative.Output = result.Output
+		for i := range narrative.GoldenPaths {
+			path := &narrative.GoldenPaths[i]
+			test, found := result.Tests[path.TestName]
+			if !found || test.Status != "pass" {
+				narrative.Passed = false
+				path.Status = "fail"
+				path.Output = test.Output
+				if path.Output == "" {
+					path.Output = result.Output
+				}
+			} else {
+				path.Status = "pass"
+			}
+		}
+	}
+	if options.Format == "json" {
+		_ = render.JSON(a.Out, narrative)
+	} else {
+		render.Narrative(a.Out, narrative)
+	}
+	if !narrative.Passed {
+		return fmt.Errorf("golden core path verification failed")
+	}
+	return nil
+}
+
 func (a App) Package(p model.Package, options Options) error {
 	if options.Format == "json" {
 		return render.JSON(a.Out, overviewOf(p))

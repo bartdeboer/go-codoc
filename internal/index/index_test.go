@@ -21,6 +21,13 @@ func TestBuildExtractsAddressableRecords(t *testing.T) {
 	if !strings.Contains(doc.Overview, "retrieves threads") {
 		t.Fatalf("overview = %q", doc.Overview)
 	}
+	if len(doc.GoldenPaths) != 1 {
+		t.Fatalf("golden paths = %#v", doc.GoldenPaths)
+	}
+	golden := doc.GoldenPaths[0]
+	if golden.ID != "thread-retrieval" || golden.Title != "Thread Retrieval" || !strings.Contains(golden.Code, "GetThread") {
+		t.Fatalf("golden path = %#v", golden)
+	}
 	if len(doc.Workflows) != 2 || doc.Workflows[0].ID != "get-thread" {
 		t.Fatalf("workflows = %#v", doc.Workflows)
 	}

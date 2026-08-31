@@ -4,10 +4,14 @@
 uses Go's own documentation model to retrieve package orientation, executable
 workflows, explicit behavioral contracts, and focused public API symbols.
 
-From inside a Go package:
+From inside a Go package, bare `codoc` renders the package narrative and runs
+every `TestGolden...` core path once. The name is an explicit promise that the
+test is isolated, deterministic, safe, and suitable for automatic execution.
+If no golden paths exist, codoc says so without treating their absence as a gap.
 
 ```sh
 codoc
+codoc package
 codoc workflows
 codoc workflow get-thread
 codoc contracts

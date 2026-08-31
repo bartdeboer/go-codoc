@@ -37,11 +37,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if len(args) == 0 {
 		source, doc, err := a.Load(ctx, globals.workDir, globals.pattern)
-		_ = source
 		if err != nil {
 			return err
 		}
-		return a.Package(doc, app.Options{Format: globals.format})
+		return a.Narrative(ctx, source, doc, app.Options{Format: globals.format})
 	}
 	return router.Run(ctx, args)
 }

@@ -161,3 +161,34 @@ func firstSentence(s string) string {
 	}
 	return s
 }
+
+// Narrative renders the executable architectural story used by bare codoc.
+func Narrative(w io.Writer, narrative model.Narrative) {
+	fmt.Fprintf(w, "Package %s\n", narrative.Name)
+	if narrative.Overview != "" {
+		fmt.Fprintf(w, "\n%s\n", narrative.Overview)
+	}
+	if len(narrative.GoldenPaths) == 0 {
+		fmt.Fprintln(w, "\nNo golden core paths.")
+		return
+	}
+	fmt.Fprintln(w, "\nGolden core paths")
+	for _, path := range narrative.GoldenPaths {
+		fmt.Fprintf(w, "\n%s\n", path.Title)
+		if path.Summary != "" {
+			fmt.Fprintf(w, "%s\n", path.Summary)
+		}
+		fmt.Fprintln(w, "\nTest:")
+		indent(w, path.Code)
+		fmt.Fprintf(w, "\nSource: %s\n%s\n", source(path.Source), strings.ToUpper(path.Status))
+		if path.Status != "pass" && path.Output != "" {
+			indent(w, path.Output)
+		}
+	}
+	if !narrative.Passed {
+		fmt.Fprintln(w, "\nOverall: FAIL")
+		if narrative.Output != "" {
+			indent(w, narrative.Output)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/bartdeboer/codoc/internal/model"
 	"testing"
@@ -44,5 +45,16 @@ func TestWorkflowJSONUsesEmptyArrays(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte(`"related_symbols": []`)) {
 		t.Fatalf("missing empty array: %s", out.String())
+	}
+}
+
+func TestNarrativeWithoutGoldenPathsDoesNotExecuteTests(t *testing.T) {
+	var out bytes.Buffer
+	a := App{Out: &out}
+	if err := a.Narrative(context.Background(), nil, model.Package{Name: "leaf", GoldenPaths: []model.GoldenPath{}}, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("No golden core paths.")) {
+		t.Fatalf("output=%q", out.String())
 	}
 }
