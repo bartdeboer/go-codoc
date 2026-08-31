@@ -6,7 +6,7 @@ import (
 	target "github.com/bartdeboer/go-codoc/internal/index/testdata/doclinks"
 )
 
-// TestExternalStory uses [target.Surface], then [target.Client.Do].
+// TestExternalStory uses [target.Surface], [target.Surface.Run], then [target.Client.Do].
 // [target.Surface] is intentionally repeated. [target.Missing], [testing.T],
 // and [target] must not create drill-down records.
 //

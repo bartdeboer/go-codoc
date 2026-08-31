@@ -168,11 +168,15 @@ func TestBuildResolvesCurrentPackageDocLinksFromExternalTests(t *testing.T) {
 		t.Fatalf("documented tests=%#v", doc.DocumentedTests)
 	}
 	story := doc.DocumentedTests[0]
-	if len(story.RelatedSymbols) != 2 {
+	if len(story.RelatedSymbols) != 3 {
 		t.Fatalf("related symbols=%#v", story.RelatedSymbols)
 	}
-	if story.RelatedSymbols[0].Symbol != "Surface" || story.RelatedSymbols[1].Symbol != "Client.Do" {
+	if story.RelatedSymbols[0].Symbol != "Surface" || story.RelatedSymbols[1].Symbol != "Surface.Run" || story.RelatedSymbols[2].Symbol != "Client.Do" {
 		t.Fatalf("related symbols=%#v", story.RelatedSymbols)
+	}
+	method := symbol(doc, "Surface.Run")
+	if method == nil || method.DeclarationKind != "method" || method.Source.File == "" || !strings.HasPrefix(method.Signature, "Run(") {
+		t.Fatalf("interface method=%#v", method)
 	}
 	for _, related := range story.RelatedSymbols {
 		if related.Package != pkg.ImportPath || related.Source.File == "" {

@@ -361,6 +361,7 @@ func genSymbols(pkg *load.Package, decl *ast.GenDecl, spec ast.Spec) []model.Sym
 	case *ast.TypeSpec:
 		if s.Name.IsExported() {
 			out = append(out, model.Symbol{Kind: "symbol", ID: s.Name.Name, DeclarationKind: "type", Signature: "type " + nodeText(pkg, s), Doc: firstDoc(s.Doc, decl.Doc), RelatedWorkflows: []string{}, RelatedContracts: []string{}, Source: position(pkg, s.Pos())})
+			out = append(out, interfaceMethods(pkg, s)...)
 		}
 	case *ast.ValueSpec:
 		kind := strings.ToLower(decl.Tok.String())
@@ -411,6 +412,35 @@ func sortRecords(p *model.Package) {
 	sort.Slice(p.Contracts, func(i, j int) bool { return p.Contracts[i].ID < p.Contracts[j].ID })
 	sort.Slice(p.Symbols, func(i, j int) bool { return p.Symbols[i].ID < p.Symbols[j].ID })
 }
+func interfaceMethodSignature(pkg *load.Package, name string, field *ast.Field) string {
+	function, ok := field.Type.(*ast.FuncType)
+	if !ok {
+		return name
+	}
+	return name + strings.TrimPrefix(nodeText(pkg, function), "func")
+}
+
+func interfaceMethods(pkg *load.Package, spec *ast.TypeSpec) []model.Symbol {
+	interfaceType, ok := spec.Type.(*ast.InterfaceType)
+	if !ok {
+		return nil
+	}
+	methods := []model.Symbol{}
+	for _, field := range interfaceType.Methods.List {
+		for _, name := range field.Names {
+			if !name.IsExported() {
+				continue
+			}
+			methods = append(methods, model.Symbol{
+				Kind: "symbol", ID: spec.Name.Name + "." + name.Name, DeclarationKind: "method",
+				Signature: interfaceMethodSignature(pkg, name.Name, field), Doc: firstDoc(field.Doc, field.Comment),
+				RelatedWorkflows: []string{}, RelatedContracts: []string{}, Source: position(pkg, name.Pos()),
+			})
+		}
+	}
+	return methods
+}
+
 func validateDocumentedTests(paths []model.DocumentedTest) error {
 	ids, names := map[string]bool{}, map[string]bool{}
 	for _, path := range paths {
